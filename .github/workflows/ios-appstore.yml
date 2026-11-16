@@ -9,13 +9,18 @@ name: iOS App Store upload
 
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: GitHub Mac to build on
+        required: false
+        default: macos-26
 
 permissions:
   contents: read
 
 jobs:
   upload:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 60
     env:
       TEAM_ID: 5TB6PWV9UN
@@ -28,6 +33,8 @@ jobs:
           [ -n "$XCODE" ] || XCODE=/Applications/Xcode.app
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
+          MAJOR=$(xcodebuild -version | head -1 | sed 's/Xcode \([0-9]*\).*/\1/')
+          [ "$MAJOR" -ge 26 ] || { echo "::error::Apple needs Xcode 26 or newer; this Mac has $(ls /Applications | grep Xcode | tr '\n' ' ')"; exit 1; }
 
       - name: Check the App Store Connect key
         env:
