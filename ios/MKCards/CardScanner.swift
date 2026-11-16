@@ -5,6 +5,7 @@ import VisionKit
 /// The camera for business cards and badges. Cards use Apple's document camera (finds the card's edges and
 /// straightens it); the text is read on the phone with Vision, and any QR code is decoded. Badges use the live
 /// QR scanner. The page then fills in the details from what was found.
+@MainActor
 final class CardScanner: NSObject, VNDocumentCameraViewControllerDelegate {
     static let shared = CardScanner()
 

@@ -31,8 +31,10 @@ jobs:
         run: |
           xcodebuild -project MKCards.xcodeproj -scheme MKCards -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
-          test -d "build/Build/Products/Release-iphoneos/MK Cards.app"
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > build.log 2>&1 \
+            || { grep -E "error:" build.log | sort -u | head -60; tail -20 build.log; exit 1; }
+          grep -E "warning: .*\.swift" build.log | sort -u | head -40 || true
+          test -x "build/Build/Products/Release-iphoneos/MK Cards.app/MK Cards"
 
       - name: Package the IPA
         working-directory: ios

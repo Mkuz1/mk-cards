@@ -9,14 +9,14 @@ import WebKit
 /// Pages reach these through `window.MKNative`, the same calls the Android app offers.
 final class WebController: UIViewController {
     private let model: AppModel
-    private let tab: Tab
+    private let homeTab: Tab
     private var webView: WKWebView!
     private var failedURL: URL?
     private var site: URL { model.site }
 
     init(model: AppModel, tab: Tab) {
         self.model = model
-        self.tab = tab
+        self.homeTab = tab
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -51,7 +51,7 @@ final class WebController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        open(path: tab.path)
+        open(path: homeTab.path)
     }
 
     func open(path: String) {
@@ -113,7 +113,7 @@ final class WebController: UIViewController {
             // App Store updates arrive by themselves; the pages are always current.
             webView.evaluateJavaScript("window.MKCards && window.MKCards.nativeUpdate('current')")
         case "retry":
-            webView.load(URLRequest(url: failedURL ?? model.url(tab.path)))
+            webView.load(URLRequest(url: failedURL ?? model.url(homeTab.path)))
         default:
             break
         }
@@ -196,7 +196,7 @@ extension WebController: WKNavigationDelegate, WKUIDelegate {
     private func showOffline(_ error: Error) {
         let code = (error as NSError).code
         guard code != NSURLErrorCancelled, let page = Bundle.main.url(forResource: "offline", withExtension: "html") else { return }
-        failedURL = webView.url ?? model.url(tab.path)
+        failedURL = webView.url ?? model.url(homeTab.path)
         webView.loadFileURL(page, allowingReadAccessTo: page)
     }
 
