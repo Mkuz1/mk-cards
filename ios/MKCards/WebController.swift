@@ -4,23 +4,29 @@ import PassKit
 import UIKit
 import WebKit
 
-/// Shows the MK Cards site full-screen and adds what a web page cannot do on its own:
-/// the share sheet, saving a contact, saving QR files, and adding passes to Apple Wallet.
-/// The page reaches these through the `MKNative` object injected below.
-final class WebViewController: UIViewController {
-    private let site: URL = {
-        let value = Bundle.main.object(forInfoDictionaryKey: "MKSiteURL") as? String ?? "https://mkcards.pages.dev"
-        return URL(string: value) ?? URL(string: "https://mkcards.pages.dev")!
-    }()
+/// Shows one page of the MK Cards site and adds what a web page cannot do by itself: the camera scanner,
+/// saving contacts and files, Apple Wallet, haptics and company sign-in in Apple's secure browser sheet.
+/// Pages reach these through `window.MKNative`, the same calls the Android app offers.
+final class WebController: UIViewController {
+    private let model: AppModel
+    private let tab: Tab
     private var webView: WKWebView!
     private var failedURL: URL?
+    private var site: URL { model.site }
+
+    init(model: AppModel, tab: Tab) {
+        self.model = model
+        self.tab = tab
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func loadView() {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default() // keeps the login cookie between launches
+        config.websiteDataStore = .default() // one sign-in shared by every tab and the native screens
         config.allowsInlineMediaPlayback = true
-        config.applicationNameForUserAgent = "MKCardsiOS/\(Self.appVersion)"
-
+        config.applicationNameForUserAgent = "MKCardsiOS/\(AppModel.appVersion)"
         let controller = WKUserContentController()
         controller.addUserScript(WKUserScript(source: Self.bridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         controller.add(MessageProxy(self), name: "mk")
@@ -30,38 +36,43 @@ final class WebViewController: UIViewController {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.scrollView.contentInsetAdjustmentBehavior = .never // the page handles the notch itself
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(named: "LaunchBackground")
+        webView.backgroundColor = UIColor(red: 0.933, green: 0.945, blue: 0.965, alpha: 1)
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        let refresh = UIRefreshControl()
+        refresh.addAction(UIAction { [weak self] _ in
+            self?.webView.reload()
+            refresh.endRefreshing()
+        }, for: .valueChanged)
+        webView.scrollView.refreshControl = refresh
+        if #available(iOS 16.4, *) { webView.isInspectable = false }
         view = webView
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        webView.load(URLRequest(url: site))
+        open(path: tab.path)
     }
 
-    func open(_ url: URL) {
-        guard url.host == site.host else { return }
-        webView.load(URLRequest(url: url))
+    func open(path: String) {
+        webView.load(URLRequest(url: model.url(path)))
     }
 
-    static var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-    }
-
-    // The same calls the Android app offers, so the site works the same in both.
     private static var bridgeScript: String {
         """
         (function () {
           const post = (type, data) => window.webkit.messageHandlers.mk.postMessage(Object.assign({ type }, data || {}));
           window.MKNative = {
+            hasTabBar: true,
             ready: () => post('ready'),
-            appVersion: () => '\(appVersion)',
+            appVersion: () => '\(AppModel.appVersion)',
             share: (title, text, url) => post('share', { title, text, url }),
             saveContact: (vcard, filename) => post('saveContact', { vcard, filename }),
             saveFile: (base64, filename, mime) => post('saveFile', { base64, filename, mime }),
             addPass: (url) => post('addPass', { url }),
+            scanCard: (kind) => post('scanCard', { kind }),
+            haptic: (kind) => post('haptic', { kind }),
+            signedOut: () => post('signedOut'),
             checkForUpdate: () => post('checkForUpdate'),
           };
         })();
@@ -77,21 +88,32 @@ final class WebViewController: UIViewController {
             if let vcard = body["vcard"] as? String { showContact(vcard) }
         case "saveFile":
             if let base64 = body["base64"] as? String, let data = Data(base64Encoded: base64) {
-                let name = (body["filename"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "mkcards-qr.png"
+                let name = (body["filename"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "mkcards-file"
                 let file = FileManager.default.temporaryDirectory.appendingPathComponent(name.replacingOccurrences(of: "/", with: "_"))
                 try? data.write(to: file)
-                // "Save Image" puts a PNG in Photos; "Save to Files" keeps any file.
+                // "Save Image" puts pictures in Photos; "Save to Files" keeps any file.
                 var item: Any = file
-                if (body["mime"] as? String) == "image/png", let image = UIImage(data: data) { item = image }
+                if let mime = body["mime"] as? String, mime.hasPrefix("image/"), mime != "image/svg+xml", let image = UIImage(data: data) { item = image }
                 present(activitySheet([item]), animated: true)
             }
         case "addPass":
-            if let link = body["url"] as? String, let url = URL(string: link) { addPass(from: url) }
+            if let link = body["url"] as? String, let url = URL(string: link) { Wallet.addPass(from: url, presenter: self) }
+        case "scanCard":
+            CardScanner.shared.scan(kind: body["kind"] as? String ?? "card", from: self) { [weak self] result in
+                guard let self, let result else { return }
+                let payload: [String: String] = ["image": result.image, "text": result.text, "qr": result.qr]
+                guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
+                self.webView.evaluateJavaScript("window.MKCards && window.MKCards.scanned(\(json))")
+            }
+        case "haptic":
+            UINotificationFeedbackGenerator().notificationOccurred(body["kind"] as? String == "error" ? .error : .success)
+        case "signedOut":
+            Task { await model.forgetSession() }
         case "checkForUpdate":
-            // Sideloaded copies are updated by installing a newer build; the site itself is always current.
+            // App Store updates arrive by themselves; the pages are always current.
             webView.evaluateJavaScript("window.MKCards && window.MKCards.nativeUpdate('current')")
         case "retry":
-            webView.load(URLRequest(url: failedURL ?? site))
+            webView.load(URLRequest(url: failedURL ?? model.url(tab.path)))
         default:
             break
         }
@@ -104,10 +126,9 @@ final class WebViewController: UIViewController {
         return sheet
     }
 
-    /// Shows the contact with the system's own "Create New Contact" / "Add to Existing Contact" options.
+    /// The system's own "Create New Contact" / "Add to Existing Contact" card.
     private func showContact(_ vcard: String) {
-        guard let data = vcard.data(using: .utf8),
-              let contact = try? CNContactVCardSerialization.contacts(with: data).first else {
+        guard let data = vcard.data(using: .utf8), let contact = try? CNContactVCardSerialization.contacts(with: data).first else {
             alert("This contact could not be opened.")
             return
         }
@@ -120,44 +141,35 @@ final class WebViewController: UIViewController {
         present(UINavigationController(rootViewController: card), animated: true)
     }
 
-    /// Downloads a pass with the login cookie and offers it to Wallet, without leaving the app.
-    private func addPass(from url: URL) {
-        guard PKAddPassesViewController.canAddPasses() else {
-            alert("This device cannot add passes to Apple Wallet.")
-            return
-        }
-        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            var request = URLRequest(url: url)
-            let header = HTTPCookie.requestHeaderFields(with: cookies.filter { url.host?.hasSuffix($0.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))) ?? false })
-            header.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-            URLSession.shared.dataTask(with: request) { data, response, _ in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    guard let data, (response as? HTTPURLResponse)?.statusCode == 200, let pass = try? PKPass(data: data),
-                          let sheet = PKAddPassesViewController(pass: pass) else {
-                        self.alert("The pass could not be added. Please try again.")
-                        return
-                    }
-                    self.present(sheet, animated: true)
-                }
-            }.resume()
-        }
-    }
-
     private func alert(_ message: String) {
         let box = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         box.addAction(UIAlertAction(title: "OK", style: .default))
         present(box, animated: true)
     }
+
+    /// Salesforce's sign-in pages stay inside the app so the connection can finish here.
+    private func isSalesforce(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return ["salesforce.com", "force.com", "cloudforce.com", "salesforce-setup.com"].contains { host == $0 || host.hasSuffix("." + $0) }
+    }
 }
 
-extension WebViewController: WKNavigationDelegate, WKUIDelegate {
+extension WebController: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { return decisionHandler(.cancel) }
-        if url.scheme == "file" || url.scheme == "about" || url.host == site.host {
+        if url.host == site.host {
+            // Microsoft and Google refuse sign-in inside an app's web view: use Apple's secure browser sheet.
+            if url.path.hasPrefix("/api/auth/sso/") {
+                decisionHandler(.cancel)
+                Task { @MainActor in
+                    if let next = await model.companySignIn(start: url) { open(path: next) }
+                }
+                return
+            }
             return decisionHandler(.allow)
         }
+        if url.scheme == "file" || url.scheme == "about" || isSalesforce(url) { return decisionHandler(.allow) }
         // Phone calls, email, WhatsApp, Google Wallet and other sites open in their own apps.
         UIApplication.shared.open(url)
         decisionHandler(.cancel)
@@ -167,7 +179,7 @@ extension WebViewController: WKNavigationDelegate, WKUIDelegate {
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if response.response.mimeType == "application/vnd.apple.pkpass", let url = response.response.url {
             decisionHandler(.cancel)
-            addPass(from: url)
+            Wallet.addPass(from: url, presenter: self)
             return
         }
         decisionHandler(.allow)
@@ -184,11 +196,10 @@ extension WebViewController: WKNavigationDelegate, WKUIDelegate {
     private func showOffline(_ error: Error) {
         let code = (error as NSError).code
         guard code != NSURLErrorCancelled, let page = Bundle.main.url(forResource: "offline", withExtension: "html") else { return }
-        failedURL = webView.url ?? site
+        failedURL = webView.url ?? model.url(tab.path)
         webView.loadFileURL(page, allowingReadAccessTo: page)
     }
 
-    // Links that ask for a new window (target=_blank) open in their own app.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url {
@@ -196,12 +207,27 @@ extension WebViewController: WKNavigationDelegate, WKUIDelegate {
         }
         return nil
     }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+        let box = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        box.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
+        box.addAction(UIAlertAction(title: "OK", style: .destructive) { _ in completionHandler(true) })
+        present(box, animated: true)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping () -> Void) {
+        let box = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        box.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+        present(box, animated: true)
+    }
 }
 
 /// Holds the page's message handler weakly, so the web view does not keep its controller alive forever.
 private final class MessageProxy: NSObject, WKScriptMessageHandler {
-    private weak var owner: WebViewController?
-    init(_ owner: WebViewController) { self.owner = owner }
+    private weak var owner: WebController?
+    init(_ owner: WebController) { self.owner = owner }
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         if let body = message.body as? [String: Any] { owner?.handle(body) }
     }

@@ -1,7 +1,12 @@
 # MK Cards for iPhone
 
-The app shows the MK Cards site full-screen and adds the share sheet, saving contacts and QR codes,
-and adding cards to Apple Wallet without leaving the app.
+A native SwiftUI app: its own welcome and sign-in screens (Sign in with Apple, Microsoft, Google, username),
+a tab bar (Cards, Share, Scan, Contacts, Account), a native Share screen (QR, Apple Wallet, NFC tags), and a native
+business-card and badge scanner. The Cards, Contacts and Account tabs show the MK Cards pages, so they are always
+current. See [APP_STORE.md](APP_STORE.md) for publishing.
+
+Sign in with Apple and NFC need a paid developer account with those capabilities on the App ID; sideloaded builds
+signed with a free Apple ID skip them.
 
 ## Get the app
 

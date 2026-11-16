@@ -145,6 +145,83 @@ function drawBanner(card, W, H) {
   return canvas;
 }
 
+// ---------- video-call background ----------
+
+/**
+ * A 1920×1080 background for Zoom, Teams, Meet and Webex. The person sits in the middle, so the name and title go
+ * in a top corner and the QR code (opening the card) in the other. theme: 'dark' (the card's colours) or 'light'.
+ * qr: { n, isDark(y, x) } from the page's QR maker, or null. logo: a loaded image or null.
+ */
+export async function drawCallBackground(card, link, { theme = 'dark', side = 'left', qr = null, logo = null, details = true } = {}) {
+  const W = 1920, H = 1080;
+  const { canvas, ctx } = surface(W, H);
+  const t = cardTheme(card);
+  const dark = theme !== 'light';
+  const ink = dark ? '#ffffff' : t.deep;
+  const soft = dark ? 'rgba(255,255,255,.78)' : rgba(t.deep, 0.72);
+  const accent = dark ? t.hi : mixHex(t.a, '#8a6a16', 0.35);
+  if (dark) {
+    backdrop(ctx, W, H, t, card.style);
+    glowAt(ctx, W * 0.5, H * 1.05, W * 0.55, rgba(t.a, 0.22));
+  } else {
+    ctx.fillStyle = '#f5f3ee';
+    ctx.fillRect(0, 0, W, H);
+    glowAt(ctx, 0, 0, W * 0.7, rgba(mixHex(t.a, '#ffffff', 0.7), 0.55));
+    glowAt(ctx, W, H, W * 0.6, rgba(mixHex(t.a, '#ffffff', 0.55), 0.35));
+  }
+  // A fine gold line along the top edge.
+  const edge = ctx.createLinearGradient(0, 0, W, 0);
+  edge.addColorStop(0, 'rgba(0,0,0,0)');
+  edge.addColorStop(0.5, accent);
+  edge.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = edge;
+  ctx.fillRect(0, 0, W, 4);
+
+  const margin = 96;
+  const blockW = 760;
+  const left = side !== 'right';
+  const x = left ? margin : W - margin - blockW;
+  const align = left ? 'left' : 'right';
+  let y = 150;
+  if (logo) {
+    const lh = 84, lw = Math.min(260, (logo.naturalWidth / logo.naturalHeight) * lh);
+    ctx.drawImage(logo, left ? x : x + blockW - lw, y - 40, lw, lh);
+    y += 90;
+  }
+  if (card.company) y = text(ctx, card.company.toUpperCase(), x, y, blockW, `650 26px ${SANS}`, 40, 1, accent, align, 7) + 18;
+  y = text(ctx, card.name || 'MK Cards', x, y + 40, blockW, `700 78px ${SERIF}`, 88, 2, ink, align);
+  if (card.title) y = text(ctx, card.title, x, y + 4, blockW, `500 36px ${SANS}`, 46, 2, soft, align);
+  rule(ctx, left ? x : x + blockW - 72, y + 8, accent, 72);
+  if (details) {
+    const lines = [(card.emails || [])[0], (card.phones || [])[0]].filter(Boolean).map((e) => e.value);
+    y += 66;
+    for (const line of lines) y = text(ctx, line, x, y, blockW, `500 28px ${SANS}`, 42, 1, soft, align);
+  }
+
+  if (qr) {
+    const box = 300, pad = 22;
+    const qx = left ? W - margin - box : margin;
+    const qy = 110;
+    ctx.save();
+    ctx.shadowColor = dark ? 'rgba(0,0,0,.45)' : 'rgba(20,30,60,.18)';
+    ctx.shadowBlur = 40;
+    ctx.shadowOffsetY = 14;
+    roundRect(ctx, qx, qy, box, box, 28);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+    const cell = (box - pad * 2) / qr.n;
+    ctx.fillStyle = '#0d1326';
+    for (let r = 0; r < qr.n; r++) {
+      for (let c = 0; c < qr.n; c++) if (qr.isDark(r, c)) ctx.fillRect(qx + pad + c * cell, qy + pad + r * cell, Math.ceil(cell), Math.ceil(cell));
+    }
+    text(ctx, 'SCAN TO SAVE MY CONTACT', qx - 80, qy + box + 50, box + 160, `650 20px ${SANS}`, 28, 1, soft, 'center', 3);
+    ctx.textAlign = 'left';
+  }
+  text(ctx, prettyLink(link), left ? margin : W - margin - blockW, H - 70, blockW, `500 24px ${SANS}`, 30, 1, dark ? 'rgba(255,255,255,.55)' : rgba(t.deep, 0.5), align);
+  return canvas;
+}
+
 // ---------- shared drawing ----------
 
 function surface(w, h) {
@@ -260,7 +337,7 @@ function text(ctx, value, x, y, maxW, font, lineHeight, lines, color = '#fff', a
     rows.push(fit(ctx, row, maxW));
   }
   for (const row of rows) {
-    ctx.fillText(row, align === 'right' ? x + maxW : x, y);
+    ctx.fillText(row, align === 'right' ? x + maxW : align === 'center' ? x + maxW / 2 : x, y);
     y += lineHeight;
   }
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';

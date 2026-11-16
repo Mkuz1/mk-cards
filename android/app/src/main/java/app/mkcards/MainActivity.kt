@@ -119,11 +119,33 @@ class MainActivity : ComponentActivity() {
         updateManager.registerListener(installListener)
 
         webView.loadUrl(startUrl(intent))
+        intent.data?.takeIf { it.scheme == "mkcards" && it.host == "auth" }?.let { finishBrowserSignIn(it) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.data?.let { if (isOurSite(it)) webView.loadUrl(it.toString()) }
+        val data = intent.data ?: return
+        if (isOurSite(data)) webView.loadUrl(data.toString())
+        else if (data.scheme == "mkcards" && data.host == "auth") finishBrowserSignIn(data)
+    }
+
+    // Microsoft and Google sign-in happen in the phone's browser (they refuse app web views), which returns
+    // to mkcards://auth with a one-time code; the web view swaps it for a session.
+    private fun finishBrowserSignIn(data: Uri) {
+        val site = "https://${BuildConfig.SITE_HOST}"
+        val next = data.getQueryParameter("next")?.takeIf { it.startsWith("/") && !it.startsWith("//") } ?: "/"
+        val error = data.getQueryParameter("error")
+        val code = data.getQueryParameter("code")
+        when {
+            error != null -> Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+            code != null -> webView.loadUrl("$site/api/auth/handoff?code=${Uri.encode(code)}&next=${Uri.encode(next)}")
+            else -> webView.loadUrl(site + next)
+        }
+    }
+
+    private fun isSalesforce(uri: Uri): Boolean {
+        val host = uri.host?.lowercase() ?: return false
+        return listOf("salesforce.com", "force.com", "cloudforce.com", "salesforce-setup.com").any { host == it || host.endsWith(".$it") }
     }
 
     override fun onResume() {
@@ -200,7 +222,17 @@ class MainActivity : ComponentActivity() {
     private inner class SiteClient : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val uri = request.url
-            if (isOurSite(uri)) return false
+            if (isOurSite(uri) && uri.path.orEmpty().startsWith("/api/auth/sso/")) {
+                val browser = uri.buildUpon().clearQuery().apply {
+                    uri.queryParameterNames.filter { it != "app" }.forEach { name -> appendQueryParameter(name, uri.getQueryParameter(name)) }
+                    appendQueryParameter("app", "android")
+                }.build()
+                try { startActivity(Intent(Intent.ACTION_VIEW, browser)) } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(this@MainActivity, R.string.no_app_for_link, Toast.LENGTH_SHORT).show()
+                }
+                return true
+            }
+            if (isOurSite(uri) || isSalesforce(uri)) return false
             // Everything else (other sites, tel:, mailto:) belongs to another app.
             try {
                 startActivity(Intent(Intent.ACTION_VIEW, uri))

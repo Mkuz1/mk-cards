@@ -28,6 +28,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="${siteHost}" />
             </intent-filter>
+            <!-- Returns here after signing in with Microsoft or Google in the browser. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mkcards" android:host="auth" />
+            </intent-filter>
         </activity>
 
         <provider

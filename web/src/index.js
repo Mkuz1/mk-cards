@@ -4,6 +4,10 @@ import { DurableObject } from 'cloudflare:workers';
 import { ASSETS } from './assets.generated.js';
 import { qrPng, qrSvg } from './qr.js';
 import { applePass, googleSaveUrl, walletStatus } from './wallet.js';
+import { decrypt, encrypt, randomToken, readSigned, sha256b64url, signValue } from './secure.js';
+import { SSO_PROVIDERS, authorizeUrl, finishSignIn, ssoStatus, verifyAppleSignIn } from './sso.js';
+import { salesforceAuthorizeUrl, salesforceExchange, salesforceHost, salesforcePushLead, salesforceRefresh, salesforceRevoke, salesforceWho } from './crm.js';
+import { readBusinessCard } from './scan.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -30,6 +34,13 @@ CREATE TABLE IF NOT EXISTS orgs (
   created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS events (card_id TEXT NOT NULL, kind TEXT NOT NULL, day TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS events_card_day ON events (card_id, day);
+CREATE TABLE IF NOT EXISTS identities (
+  provider TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL, email TEXT, created_at INTEGER NOT NULL,
+  PRIMARY KEY (provider, subject));
+CREATE INDEX IF NOT EXISTS identities_user ON identities (user_id);
+CREATE TABLE IF NOT EXISTS org_sso (provider TEXT NOT NULL, value TEXT NOT NULL, org_id TEXT NOT NULL, label TEXT, PRIMARY KEY (provider, value));
+CREATE TABLE IF NOT EXISTS handoffs (code_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS crm (owner TEXT PRIMARY KEY, provider TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL);
 `;
 // Columns added after the first release, created on start-up when missing.
 const ADDED_COLUMNS = [
@@ -40,7 +51,18 @@ const ADDED_COLUMNS = [
   ['users', 'last_login', 'INTEGER'],
   ['cards', 'active', 'INTEGER NOT NULL DEFAULT 1'],
   ['cards', 'inactive_message', 'TEXT'],
+  ['contacts', 'user_id', 'TEXT'],
+  ['contacts', 'source', 'TEXT'],
+  ['contacts', 'crm_id', 'TEXT'],
+  ['contacts', 'crm_error', 'TEXT'],
+  ['contacts', 'crm_at', 'INTEGER'],
 ];
+// identities links an account to a Google, Microsoft or Apple sign-in (subject is the provider's stable id).
+// org_sso: the Google Workspace domain or Microsoft tenant a company has connected for company sign-in.
+// handoffs: one-time codes (2 minutes) that carry a sign-in from the system browser into the app, or a
+//   signed-in person into a sign-in started outside the page.
+// crm: a Salesforce connection, for a company ('org:<id>') or a person ('user:<id>'). Tokens are encrypted.
+// contacts: people captured by a card holder: shared on the card page (source 'form') or scanned ('scan', 'badge').
 // orgs are company workspaces: users.org_id and users.role ('owner', 'admin' or 'member') place people in one.
 // events records what visitors do with a card (view, save, whatsapp, email, call, qr, share, web), per day.
 // media holds images, apart from the card records: kind 'photo' is the card's photo; 'og', 'thumb' and 'hero'
@@ -134,8 +156,8 @@ const ENTRY_LABELS = new Set(['mobile', 'work', 'home', 'personal', 'other']);
 const MAX_ENTRIES = 10; // phones or emails per card
 
 export default {
-  async fetch(request, env) {
-    return withSecurityHeaders(await app.fetch(request, env));
+  async fetch(request, env, ctx) {
+    return withSecurityHeaders(await app.fetch(request, { ...env, waitUntil: (p) => ctx.waitUntil(p) }));
   },
 };
 
@@ -150,7 +172,7 @@ const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
   'strict-transport-security': 'max-age=31536000; includeSubDomains',
   'referrer-policy': 'strict-origin-when-cross-origin',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  'permissions-policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
 };
 
 function withSecurityHeaders(response) {
@@ -214,10 +236,35 @@ async function api(request, env, url) {
   if (path === '/auth/login' && method === 'POST') return login(request, env, url);
   if (path === '/auth/logout' && method === 'POST') return logout(request, env, url);
   if (path === '/auth/username' && method === 'GET') return usernameAvailable(env, url);
+  if (path === '/auth/apple' && method === 'POST') return appleSignIn(request, env, url);
+  if (path === '/auth/ticket' && method === 'POST') return ssoTicket(request, env);
+  if (path === '/auth/handoff' && method === 'GET') return useHandoff(env, url);
+  let sso = /^\/auth\/sso\/(google|microsoft)\/(start|callback)$/.exec(path);
+  if (sso && method === 'GET') return sso[2] === 'start' ? ssoStart(request, env, url, sso[1]) : ssoCallback(request, env, url, sso[1]);
+  sso = /^\/me\/identities\/(google|microsoft|apple)$/.exec(path);
+  if (sso && method === 'DELETE') return unlinkIdentity(request, env, sso[1]);
+  if (path === '/public/qr.png' && method === 'GET') return publicQr(env, url);
+
+  if (path === '/contacts' && method === 'GET') return allContacts(request, env);
+  if (path === '/contacts' && method === 'POST') return addScannedContact(request, env, url);
+  if (path === '/contacts.csv' && method === 'GET') return contactsCsv(request, env);
+  if (path === '/scan/read' && method === 'POST') return scanRead(request, env);
+  let ct = /^\/contacts\/(\d+)$/.exec(path);
+  if (ct && method === 'DELETE') return removeContact(request, env, Number(ct[1]));
+  ct = /^\/contacts\/(\d+)\/crm$/.exec(path);
+  if (ct && method === 'POST') return sendContactToCrm(request, env, url, Number(ct[1]));
+  if (path === '/crm' && method === 'GET') return crmState(request, env, url);
+  if (path === '/crm' && method === 'PUT') return crmSettings(request, env);
+  if (path === '/crm' && method === 'DELETE') return crmDisconnect(request, env);
+  if (path === '/crm/salesforce/start' && method === 'GET') return salesforceStart(request, env, url);
+  if (path === '/crm/salesforce/callback' && method === 'GET') return salesforceCallback(request, env, url);
+  if (path === '/org/sso' && method === 'PUT') return orgSsoSettings(request, env);
+  sso = /^\/org\/sso\/(google|microsoft)$/.exec(path);
+  if (sso && method === 'DELETE') return orgSsoRemove(request, env, sso[1]);
 
   if (path === '/public/card' && method === 'GET') return publicCard(env, url);
   if (path === '/public/vcard' && method === 'GET') return publicVCard(env, url);
-  if (path === '/public/contacts' && method === 'POST') return addContact(request, env);
+  if (path === '/public/contacts' && method === 'POST') return addContact(request, env, url);
   if (path === '/public/event' && method === 'POST') return recordEvent(request, env);
   if (path === '/me/activity.csv' && method === 'GET') return activityCsv(request, env, url, false);
 
@@ -287,7 +334,7 @@ async function register(request, env, url) {
   const user = { id: randomId(16), username, email };
   await env.DB.prepare('INSERT INTO users (id, username, email, pass_hash, created_at) VALUES (?, ?, ?, ?, ?)')
     .bind(user.id, username, email, await hashPassword(password), Date.now()).run();
-  return json({ user: publicUser({ ...user, must_change: 0 }), cards: [], wallet: walletStatus(env) }, 201, { 'set-cookie': await startSession(env, url, user.id) });
+  return json({ user: { ...publicUser({ ...user, must_change: 0 }), org: null, hasPassword: true, identities: [] }, cards: [], wallet: walletStatus(env), sso: ssoStatus(env) }, 201, { 'set-cookie': await startSession(env, url, user.id) });
 }
 
 async function login(request, env, url) {
@@ -311,6 +358,7 @@ async function login(request, env, url) {
     throw new HttpError(401, 'Wrong username or password.');
   }
   if (!user.active) throw new HttpError(403, 'This account has been deactivated by your company administrator.');
+  await requirePasswordAllowed(env, user.id);
   await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?').bind(Date.now(), user.id).run();
   const cookieHeader = await startSession(env, url, user.id);
   return json(await accountState(env, await userById(env, user.id)), 200, { 'set-cookie': cookieHeader });
@@ -332,7 +380,7 @@ async function usernameAvailable(env, url) {
 
 async function me(request, env) {
   const user = await currentUser(request, env);
-  if (!user) return json({ user: null, cards: [], wallet: walletStatus(env) });
+  if (!user) return json({ user: null, cards: [], wallet: walletStatus(env), sso: ssoStatus(env) });
   return json(await accountState(env, user));
 }
 
@@ -340,13 +388,17 @@ async function me(request, env) {
 async function accountState(env, user) {
   let org = null;
   if (user.org_id) {
-    const row = await env.DB.prepare('SELECT id, name, plan FROM orgs WHERE id = ?').bind(user.org_id).first();
-    if (row) org = { id: row.id, name: row.name, plan: row.plan, role: user.role || 'member' };
+    const row = await env.DB.prepare('SELECT id, name, plan, data FROM orgs WHERE id = ?').bind(user.org_id).first();
+    if (row) org = { id: row.id, name: row.name, plan: row.plan, role: user.role || 'member', logo: JSON.parse(row.data || '{}').logo || '' };
   }
-  return { user: { ...publicUser(user), org }, cards: await cardsOf(env, user.id), wallet: walletStatus(env) };
+  const { results: ids } = await env.DB.prepare('SELECT provider, email FROM identities WHERE user_id = ?').bind(user.id).all();
+  return {
+    user: { ...publicUser(user), org, hasPassword: Boolean(user.has_password), identities: ids.map((i) => ({ provider: i.provider, email: i.email || '' })) },
+    cards: await cardsOf(env, user.id), wallet: walletStatus(env), sso: ssoStatus(env),
+  };
 }
 
-const USER_FIELDS = 'u.id, u.username, u.email, u.active, u.must_change, u.org_id, u.role';
+const USER_FIELDS = "u.id, u.username, u.email, u.active, u.must_change, u.org_id, u.role, (u.pass_hash LIKE 'pbkdf2$%') AS has_password";
 
 async function userById(env, id) {
   return env.DB.prepare(`SELECT ${USER_FIELDS} FROM users u WHERE u.id = ?`).bind(id).first();
@@ -356,9 +408,11 @@ async function deleteAccount(request, env, url) {
   const user = await requireUser(request, env);
   const body = await readJson(request);
   const row = await env.DB.prepare('SELECT pass_hash FROM users WHERE id = ?').bind(user.id).first();
-  if (!(await verifyPassword(typeof body.password === 'string' ? body.password : '', row.pass_hash))) {
-    throw new HttpError(403, 'That password is not correct.');
-  }
+  // People who only sign in with Google, Microsoft or Apple confirm by typing their username instead.
+  const confirmed = user.has_password
+    ? await verifyPassword(typeof body.password === 'string' ? body.password : '', row.pass_hash)
+    : text(body.confirm, 40).toLowerCase() === user.username;
+  if (!confirmed) throw new HttpError(403, user.has_password ? 'That password is not correct.' : 'Type your username to confirm.');
   if (user.role === 'owner') {
     const others = await env.DB.prepare('SELECT COUNT(*) AS n FROM users WHERE org_id = ? AND id != ?').bind(user.org_id, user.id).first();
     if (others.n) throw new HttpError(409, 'You own a company workspace with other members. Make another person the owner first.');
@@ -369,6 +423,9 @@ async function deleteAccount(request, env, url) {
     env.DB.prepare('DELETE FROM media WHERE user_id = ?').bind(user.id),
     env.DB.prepare('DELETE FROM cards WHERE user_id = ?').bind(user.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
+    env.DB.prepare('DELETE FROM identities WHERE user_id = ?').bind(user.id),
+    env.DB.prepare('DELETE FROM contacts WHERE user_id = ?').bind(user.id),
+    env.DB.prepare('DELETE FROM crm WHERE owner = ?').bind(`user:${user.id}`),
     env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
   ]);
   return json({ ok: true }, 200, { 'set-cookie': cookie(url, '', 0) });
@@ -380,7 +437,8 @@ async function changePassword(request, env) {
   const body = await readJson(request);
   const next = typeof body.next === 'string' ? body.next : '';
   const row = await env.DB.prepare('SELECT pass_hash FROM users WHERE id = ?').bind(user.id).first();
-  if (!(await verifyPassword(typeof body.current === 'string' ? body.current : '', row.pass_hash))) {
+  // Accounts made through Google, Microsoft or Apple have no password yet and may add one.
+  if (user.has_password && !(await verifyPassword(typeof body.current === 'string' ? body.current : '', row.pass_hash))) {
     throw new HttpError(403, 'Your current password is not correct.');
   }
   checkPassword(next);
@@ -703,7 +761,8 @@ async function updateOrg(request, env) {
   const name = text(body.name, 80);
   if (!name) throw new HttpError(400, 'Enter the company name.');
   const before = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(user.org_id).first();
-  const settings = { ...cleanOrgSettings(body.settings), logo: JSON.parse(before.data || '{}').logo || '' };
+  const prev = JSON.parse(before.data || '{}');
+  const settings = { ...cleanOrgSettings(body.settings), logo: prev.logo || '', sso: prev.sso || {} };
   await env.DB.prepare('UPDATE orgs SET name = ?, data = ? WHERE id = ?').bind(name, JSON.stringify(settings), user.org_id).run();
   return json({ ok: true });
 }
@@ -758,6 +817,7 @@ async function orgOverview(request, env) {
   return json({
     org: { id: org.id, name: org.name, plan: org.plan, settings: cleanOrgSettings(JSON.parse(org.data || '{}')), defaultMessage: DEFAULT_LEFT_MESSAGE },
     members: await orgMembers(env, user.org_id),
+    sso: await orgSso(env, user.org_id),
     me: user.id,
   });
 }
@@ -926,6 +986,584 @@ async function resetMemberPassword(request, env, memberId) {
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(member.id),
   ]);
   return json({ password });
+}
+
+// ---------- sign-in with Google, Microsoft and Apple ----------
+
+const SSO_COOKIE = 'mk_sso';
+const CRM_COOKIE = 'mk_crm';
+const PROVIDER_NAMES = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple' };
+const DEACTIVATED = 'This account has been deactivated by your company administrator.';
+const flowCookie = (url, name, value, maxAge) =>
+  `${name}=${value}; Path=/api/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${url.protocol === 'https:' ? '; Secure' : ''}`;
+
+// One-time codes, valid for two minutes.
+async function newHandoff(env, userId, kind) {
+  const code = randomToken(24);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM handoffs WHERE expires_at < ?').bind(Date.now()),
+    env.DB.prepare('INSERT INTO handoffs (code_hash, user_id, kind, expires_at) VALUES (?, ?, ?, ?)').bind(await sha256(code), userId, kind, Date.now() + 120_000),
+  ]);
+  return code;
+}
+
+async function takeHandoff(env, code, kind) {
+  if (!code) return null;
+  const hash = await sha256(code);
+  const [rows] = await env.DB.batch([
+    env.DB.prepare('SELECT user_id FROM handoffs WHERE code_hash = ? AND kind = ? AND expires_at > ?').bind(hash, kind, Date.now()),
+    env.DB.prepare('DELETE FROM handoffs WHERE code_hash = ?').bind(hash),
+  ]);
+  return rows[0] ? rows[0].user_id : null;
+}
+
+const safeNext = (value) => (typeof value === 'string' && /^\/(?!\/)[\w\-./?=&]*$/.test(value) ? value : '/');
+
+// Connecting a sign-in to an account (or a company) starts from the signed-in page with a one-time ticket,
+// so it also works when the sign-in itself happens in the phone's browser, outside the app.
+async function ssoTicket(request, env) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request, 1000);
+  const mode = body.mode === 'claim' ? 'claim' : 'link';
+  if (mode === 'claim') requireAdminRole(user);
+  return json({ ticket: await newHandoff(env, user.id, mode) });
+}
+
+function ssoDone(url, app, { path = '/', error = '', code = '', cookies = [] }) {
+  let location;
+  if (app) {
+    const q = new URLSearchParams({ next: path });
+    if (error) q.set('error', error);
+    if (code) q.set('code', code);
+    location = `mkcards://auth?${q}`;
+  } else {
+    location = `${url.origin}${path}${error ? `${path.includes('?') ? '&' : '?'}error=${encodeURIComponent(error)}` : ''}`;
+  }
+  const headers = new Headers({ location, 'cache-control': 'no-store' });
+  headers.append('set-cookie', flowCookie(url, SSO_COOKIE, '', 0));
+  for (const c of cookies) headers.append('set-cookie', c);
+  return new Response(null, { status: 302, headers });
+}
+
+async function ssoStart(request, env, url, provider) {
+  const app = ['ios', 'android'].includes(url.searchParams.get('app')) ? url.searchParams.get('app') : '';
+  const mode = ['link', 'claim'].includes(url.searchParams.get('mode')) ? url.searchParams.get('mode') : 'login';
+  const back = mode === 'link' ? '/account' : mode === 'claim' ? '/admin' : '/login';
+  if (!ssoStatus(env)[provider]) return ssoDone(url, app, { path: back, error: `${PROVIDER_NAMES[provider]} sign-in is not set up yet.` });
+  let userId = '';
+  if (mode !== 'login') {
+    userId = await takeHandoff(env, url.searchParams.get('ticket'), mode);
+    if (!userId) return ssoDone(url, app, { path: back, error: 'That link has expired. Please try again.' });
+  }
+  const state = randomToken();
+  const nonce = randomToken();
+  const verifier = randomToken(48);
+  const saved = await signValue(env, { state, nonce, verifier, mode, app, provider, userId, exp: Date.now() + 600_000 });
+  const location = authorizeUrl(env, provider, {
+    redirectUri: `${url.origin}/api/auth/sso/${provider}/callback`, state, nonce,
+    challenge: await sha256b64url(verifier), hint: text(url.searchParams.get('hint'), 120),
+  });
+  return new Response(null, { status: 302, headers: { location, 'set-cookie': flowCookie(url, SSO_COOKIE, saved, 600), 'cache-control': 'no-store' } });
+}
+
+async function ssoCallback(request, env, url, provider) {
+  const saved = await readSigned(env, readCookie(request, SSO_COOKIE));
+  const app = (saved && saved.app) || '';
+  const back = saved && saved.mode === 'link' ? '/account' : saved && saved.mode === 'claim' ? '/admin' : '/login';
+  const fail = (error) => ssoDone(url, app, { path: back, error });
+  if (!saved || saved.provider !== provider || saved.exp < Date.now() || saved.state !== url.searchParams.get('state')) {
+    return fail('The sign-in took too long or was started somewhere else. Please try again.');
+  }
+  if (url.searchParams.get('error')) return fail('The sign-in was cancelled.');
+  let who;
+  try {
+    who = await finishSignIn(env, provider, {
+      code: url.searchParams.get('code') || '', redirectUri: `${url.origin}/api/auth/sso/${provider}/callback`,
+      verifier: saved.verifier, nonce: saved.nonce,
+    });
+  } catch (err) {
+    console.warn('Sign-in failed', provider, String(err));
+    return fail(err.message || 'The sign-in could not be completed.');
+  }
+  try {
+    if (saved.mode === 'link') {
+      await linkIdentity(env, saved.userId, who);
+      return ssoDone(url, app, { path: `/account?linked=${provider}` });
+    }
+    if (saved.mode === 'claim') {
+      await claimForOrg(env, saved.userId, who);
+      return ssoDone(url, app, { path: `/admin?sso=${provider}` });
+    }
+    const { userId } = await signInWith(env, request, who);
+    return finishLogin(env, url, app, userId);
+  } catch (err) {
+    if (err instanceof HttpError) return fail(err.message);
+    throw err;
+  }
+}
+
+async function finishLogin(env, url, app, userId) {
+  await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?').bind(Date.now(), userId).run();
+  const cards = await env.DB.prepare('SELECT COUNT(*) AS n FROM cards WHERE user_id = ?').bind(userId).first();
+  const path = cards.n ? '/' : '/new';
+  if (app) return ssoDone(url, app, { code: await newHandoff(env, userId, 'login'), path });
+  return ssoDone(url, '', { path, cookies: [await startSession(env, url, userId)] });
+}
+
+// The app opens this address in its own web view to pick up a sign-in finished in the phone's browser.
+async function useHandoff(env, url) {
+  const userId = await takeHandoff(env, url.searchParams.get('code'), 'login');
+  if (!userId) return Response.redirect(`${url.origin}/login?error=${encodeURIComponent('That sign-in link has expired. Please try again.')}`, 302);
+  const headers = new Headers({ location: url.origin + safeNext(url.searchParams.get('next')), 'cache-control': 'no-store' });
+  headers.append('set-cookie', await startSession(env, url, userId));
+  return new Response(null, { status: 302, headers });
+}
+
+async function addIdentity(env, userId, who) {
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM identities WHERE user_id = ? AND provider = ?').bind(userId, who.provider),
+    env.DB.prepare('INSERT INTO identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(who.provider, who.subject, userId, who.email || null, Date.now()),
+  ]);
+}
+
+async function linkIdentity(env, userId, who) {
+  const other = await env.DB.prepare('SELECT user_id FROM identities WHERE provider = ? AND subject = ?').bind(who.provider, who.subject).first();
+  if (other && other.user_id !== userId) {
+    throw new HttpError(409, `This ${PROVIDER_NAMES[who.provider]} account is already connected to another MK Cards account.`);
+  }
+  await addIdentity(env, userId, who);
+}
+
+async function freeUsername(env, raw) {
+  let base = slugify(raw).replace(/[^a-z0-9_-]/g, '').slice(0, 26);
+  if (!USERNAME.test(base) || RESERVED.has(base)) base = `user-${randomId(4)}`;
+  let username = base;
+  for (let n = 2; await env.DB.prepare('SELECT 1 FROM users WHERE username = ?').bind(username).first(); n++) username = `${base}-${n}`;
+  return username;
+}
+
+const nameFromEmail = (email) => email.split('@')[0].split(/[._-]+/).filter(Boolean)
+  .map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+
+// A new account for someone who signed in with Google, Microsoft or Apple. It has no password until they add one.
+async function createSsoUser(env, who, org) {
+  const email = who.email || `${who.provider}-${randomId(10)}@users.mkcards.invalid`;
+  const username = await freeUsername(env, who.email ? who.email.split('@')[0] : who.name || 'user');
+  const id = randomId(16);
+  const now = Date.now();
+  const statements = [
+    env.DB.prepare('INSERT INTO users (id, username, email, pass_hash, created_at, org_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, username, email, `sso$${randomId(24)}`, now, org ? org.id : null, org ? 'member' : null),
+    env.DB.prepare('INSERT INTO identities (provider, subject, user_id, email, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(who.provider, who.subject, id, who.email || null, now),
+  ];
+  if (org) {
+    // Company members start with a card in the company's colours, ready to complete.
+    const card = cleanCard({
+      name: who.name || nameFromEmail(email), company: org.name, emails: who.email ? [{ label: 'work', value: who.email }] : [],
+      accent: cleanOrgSettings(JSON.parse(org.data || '{}')).accent, style: 'aurora',
+    });
+    statements.push(env.DB.prepare("INSERT INTO cards (id, user_id, slug, data, created_at, updated_at) VALUES (?, ?, '', ?, ?, ?)")
+      .bind(randomId(12), id, JSON.stringify(card), now, now));
+  }
+  await env.DB.batch(statements);
+  return id;
+}
+
+/** Finds (or makes) the account for a person who signed in with a provider. */
+async function signInWith(env, request, who) {
+  const linked = await env.DB.prepare('SELECT i.user_id, u.active FROM identities i JOIN users u ON u.id = i.user_id WHERE i.provider = ? AND i.subject = ?')
+    .bind(who.provider, who.subject).first();
+  if (linked) {
+    if (!linked.active) throw new HttpError(403, DEACTIVATED);
+    return { userId: linked.user_id };
+  }
+  // A company that connected this Google Workspace domain or Microsoft tenant.
+  const claimValue = who.provider === 'google' ? who.domain : who.provider === 'microsoft' ? who.tenant : '';
+  const claim = claimValue && await env.DB.prepare('SELECT org_id FROM org_sso WHERE provider = ? AND value = ?').bind(who.provider, claimValue.toLowerCase()).first();
+  if (claim) {
+    const org = await env.DB.prepare('SELECT id, name, data FROM orgs WHERE id = ?').bind(claim.org_id).first();
+    const member = who.email && await env.DB.prepare('SELECT id, active FROM users WHERE email = ? AND org_id = ?').bind(who.email, org.id).first();
+    if (member) {
+      if (!member.active) throw new HttpError(403, DEACTIVATED);
+      await addIdentity(env, member.id, who);
+      return { userId: member.id };
+    }
+    const sso = JSON.parse(org.data || '{}').sso || {};
+    if (!sso.autoCreate || !who.email) {
+      throw new HttpError(403, `${org.name} has not added ${who.email || 'this account'} to MK Cards yet. Ask your company administrator to add you.`);
+    }
+    if (await env.DB.prepare('SELECT 1 FROM users WHERE email = ?').bind(who.email).first()) {
+      throw new HttpError(409, `An MK Cards account outside ${org.name} already uses ${who.email}. Log in with its password.`);
+    }
+    return { userId: await createSsoUser(env, who, org), created: true };
+  }
+  // An account with the same address, when the provider vouches for that address.
+  const existing = who.email && await env.DB.prepare('SELECT id, active FROM users WHERE email = ?').bind(who.email).first();
+  if (existing && who.emailTrusted) {
+    if (!existing.active) throw new HttpError(403, DEACTIVATED);
+    await addIdentity(env, existing.id, who);
+    return { userId: existing.id };
+  }
+  if (existing) {
+    throw new HttpError(409, `An MK Cards account already uses ${who.email}. Log in with your password, then connect ${PROVIDER_NAMES[who.provider]} on your Account page.`);
+  }
+  await throttle(env, request, 'register', 10, 60 * 60 * 1000, true);
+  return { userId: await createSsoUser(env, who, null), created: true };
+}
+
+// Sign in with Apple, from the iPhone app. The app opens /api/auth/handoff?code=… to finish.
+async function appleSignIn(request, env, url) {
+  const body = await readJson(request, 8000);
+  await throttle(env, request, 'login', 20, 15 * 60 * 1000, false);
+  let who;
+  try {
+    who = await verifyAppleSignIn(env, String(body.identityToken || ''), String(body.nonce || ''));
+  } catch (err) {
+    await recordAttempt(env, request, 'login');
+    throw new HttpError(401, err.message || 'The Apple sign-in could not be verified.');
+  }
+  who.name = text(body.name, 80);
+  const { userId } = await signInWith(env, request, who);
+  await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?').bind(Date.now(), userId).run();
+  const cards = await env.DB.prepare('SELECT COUNT(*) AS n FROM cards WHERE user_id = ?').bind(userId).first();
+  return json({ handoff: await newHandoff(env, userId, 'login'), next: cards.n ? '/' : '/new' });
+}
+
+async function unlinkIdentity(request, env, provider) {
+  const user = await requireUser(request, env);
+  const { results } = await env.DB.prepare('SELECT provider FROM identities WHERE user_id = ?').bind(user.id).all();
+  if (!user.has_password && results.length <= 1) throw new HttpError(409, 'Add a password first, so you can still sign in.');
+  await env.DB.prepare('DELETE FROM identities WHERE user_id = ? AND provider = ?').bind(user.id, provider).run();
+  return json({ ok: true });
+}
+
+// Companies that require company sign-in stop their members (not the owner) from using passwords.
+async function requirePasswordAllowed(env, userId) {
+  const u = await env.DB.prepare('SELECT u.role, o.data FROM users u JOIN orgs o ON o.id = u.org_id WHERE u.id = ?').bind(userId).first();
+  if (!u || u.role === 'owner') return;
+  const sso = JSON.parse(u.data || '{}').sso || {};
+  if (sso.requireSso) throw new HttpError(403, 'Your company signs in with its Microsoft or Google accounts. Use the company sign-in button below.');
+}
+
+// A company connects its Google Workspace domain or Microsoft tenant by an administrator signing in with it.
+async function claimForOrg(env, userId, who) {
+  const user = await userById(env, userId);
+  requireAdminRole(user);
+  if (who.provider === 'google' && !who.domain) {
+    throw new HttpError(400, 'Use a Google Workspace account from your company\'s domain, not a personal Gmail account.');
+  }
+  const value = (who.provider === 'google' ? who.domain : who.tenant).toLowerCase();
+  const other = await env.DB.prepare('SELECT org_id FROM org_sso WHERE provider = ? AND value = ?').bind(who.provider, value).first();
+  if (other && other.org_id !== user.org_id) throw new HttpError(409, 'This domain is already connected to another company on MK Cards. Please contact MK Cards support.');
+  const label = who.provider === 'google' ? value : (who.email.split('@')[1] || value);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM org_sso WHERE org_id = ? AND provider = ?').bind(user.org_id, who.provider),
+    env.DB.prepare('INSERT INTO org_sso (provider, value, org_id, label) VALUES (?, ?, ?, ?)').bind(who.provider, value, user.org_id, label),
+  ]);
+  await linkIdentity(env, user.id, who).catch(() => {});
+}
+
+async function orgSso(env, orgId) {
+  const [claims, org] = await env.DB.batch([
+    env.DB.prepare('SELECT provider, label FROM org_sso WHERE org_id = ?').bind(orgId),
+    env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(orgId),
+  ]);
+  const sso = JSON.parse((org[0] && org[0].data) || '{}').sso || {};
+  return { claims, autoCreate: Boolean(sso.autoCreate), requireSso: Boolean(sso.requireSso), available: ssoStatus(env) };
+}
+
+async function orgSsoSettings(request, env) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const body = await readJson(request, 1000);
+  const org = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(user.org_id).first();
+  const data = JSON.parse(org.data || '{}');
+  const claims = await env.DB.prepare('SELECT COUNT(*) AS n FROM org_sso WHERE org_id = ?').bind(user.org_id).first();
+  if (body.requireSso && !claims.n) throw new HttpError(400, 'Connect Microsoft or Google first.');
+  data.sso = { autoCreate: Boolean(body.autoCreate), requireSso: Boolean(body.requireSso) };
+  await env.DB.prepare('UPDATE orgs SET data = ? WHERE id = ?').bind(JSON.stringify(data), user.org_id).run();
+  return json(await orgSso(env, user.org_id));
+}
+
+async function orgSsoRemove(request, env, provider) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  await env.DB.prepare('DELETE FROM org_sso WHERE org_id = ? AND provider = ?').bind(user.org_id, provider).run();
+  const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM org_sso WHERE org_id = ?').bind(user.org_id).first();
+  if (!left.n) {
+    const org = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(user.org_id).first();
+    const data = JSON.parse(org.data || '{}');
+    data.sso = { ...(data.sso || {}), requireSso: false };
+    await env.DB.prepare('UPDATE orgs SET data = ? WHERE id = ?').bind(JSON.stringify(data), user.org_id).run();
+  }
+  return json(await orgSso(env, user.org_id));
+}
+
+// ---------- captured contacts (shared on a card page, or scanned) ----------
+
+const MAX_CONTACTS_PER_USER = 5000;
+const CONTACT_FIELDS = { name: 80, title: 80, company: 80, email: 120, phone: 40, mobile: 40, website: 200, address: 160, note: 400, event: 80 };
+
+function cleanContact(input) {
+  const out = {};
+  for (const [key, max] of Object.entries(CONTACT_FIELDS)) {
+    const value = text(input && input[key], max);
+    if (value) out[key] = value;
+  }
+  if (out.website) out.website = safeUrl(out.website) || undefined;
+  if (!out.name) throw new HttpError(400, 'Add the person\'s name.');
+  if (out.email && !isEmail(out.email)) throw new HttpError(400, 'That email address does not look right.');
+  return out;
+}
+
+const contactRow = (r) => ({
+  ...JSON.parse(r.data), id: r.id, cardId: r.card_id || '', createdAt: r.created_at, source: r.source || 'form',
+  crm: r.crm_id ? { id: r.crm_id, at: r.crm_at } : null, crmError: r.crm_error || '',
+});
+const CONTACT_COLUMNS = 'k.id, k.card_id, k.data, k.created_at, k.source, k.crm_id, k.crm_error, k.crm_at';
+const MINE = '(k.user_id = ? OR (k.user_id IS NULL AND k.card_id IN (SELECT id FROM cards WHERE user_id = ?)))';
+
+async function allContacts(request, env) {
+  const user = await requireUser(request, env);
+  const { results } = await env.DB.prepare(`SELECT ${CONTACT_COLUMNS} FROM contacts k WHERE ${MINE} ORDER BY k.created_at DESC LIMIT ${MAX_CONTACTS_PER_USER}`)
+    .bind(user.id, user.id).all();
+  return json({ contacts: results.map(contactRow) });
+}
+
+async function addScannedContact(request, env, url) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request, 20_000);
+  const contact = cleanContact(body);
+  const source = ['scan', 'badge', 'manual'].includes(body.source) ? body.source : 'scan';
+  const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM contacts WHERE user_id = ?').bind(user.id).first();
+  if (count.n >= MAX_CONTACTS_PER_USER) throw new HttpError(429, 'Your contact list is full. Remove some contacts first.');
+  const row = await env.DB.prepare(`INSERT INTO contacts (card_id, data, created_at, user_id, source) VALUES ('', ?, ?, ?, ?) RETURNING ${CONTACT_COLUMNS.replace(/k\./g, '')}`)
+    .bind(JSON.stringify(contact), Date.now(), user.id, source).first();
+  autoSync(env, url, user.id, row.id);
+  return json({ contact: contactRow(row) }, 201);
+}
+
+async function myContact(request, env, id) {
+  const user = await requireUser(request, env);
+  const row = await env.DB.prepare(`SELECT ${CONTACT_COLUMNS} FROM contacts k WHERE k.id = ? AND ${MINE}`).bind(id, user.id, user.id).first();
+  if (!row) throw new HttpError(404, 'Contact not found.');
+  return { user, row };
+}
+
+async function removeContact(request, env, id) {
+  await myContact(request, env, id);
+  await env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(id).run();
+  return json({ ok: true });
+}
+
+async function contactsCsv(request, env) {
+  const user = await requireUser(request, env);
+  const { results } = await env.DB.prepare(`SELECT ${CONTACT_COLUMNS} FROM contacts k WHERE ${MINE} ORDER BY k.created_at DESC`).bind(user.id, user.id).all();
+  const rows = [['date', 'name', 'title', 'company', 'email', 'phone', 'mobile', 'website', 'address', 'event', 'note', 'source', 'salesforce_id']];
+  for (const r of results.map(contactRow)) {
+    rows.push([new Date(r.createdAt).toISOString().slice(0, 10), r.name, r.title, r.company, r.email, r.phone, r.mobile, r.website, r.address, r.event, r.note,
+      r.source, r.crm ? r.crm.id : '']);
+  }
+  return csvResponse(csv(rows), 'mkcards-contacts.csv');
+}
+
+async function scanRead(request, env) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request, 2_500_000);
+  const image = typeof body.image === 'string' && /^data:image\/(jpeg|png);base64,/.test(body.image) ? body.image : '';
+  const ocr = text(body.text, 3000);
+  if (!image && !ocr) throw new HttpError(400, 'Take a photo of the card first.');
+  if (!env.AI) throw new HttpError(503, 'Reading cards is not available right now. Fill in the details yourself.');
+  const key = `scan:${user.id}`;
+  if ((await countAttempts(env, key, 24 * 60 * 60 * 1000)) >= 300) throw new HttpError(429, 'You have scanned a lot of cards today. Please fill in the details yourself.');
+  await addAttempt(env, key);
+  try {
+    const { fields } = await readBusinessCard(env, { image, text: ocr });
+    return json({ fields });
+  } catch (err) {
+    console.warn('Card could not be read', String(err));
+    throw new HttpError(422, 'The card could not be read. Try a sharper photo in good light, or fill in the details yourself.');
+  }
+}
+
+// ---------- Salesforce ----------
+
+const crmOwnerOf = (user) => (user.org_id ? `org:${user.org_id}` : `user:${user.id}`);
+const canManageCrm = (user) => !user.org_id || user.role === 'admin' || user.role === 'owner';
+
+async function crmRecord(env, owner) {
+  const row = await env.DB.prepare('SELECT data FROM crm WHERE owner = ?').bind(owner).first();
+  return row ? JSON.parse(row.data) : {};
+}
+
+const saveCrm = (env, owner, data) => env.DB.prepare(
+  'INSERT INTO crm (owner, provider, data, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (owner) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at',
+).bind(owner, 'salesforce', JSON.stringify(data), Date.now()).run();
+
+// The Salesforce app used to connect: the company's own, or MK Cards' when it has one.
+async function crmApp(env, data) {
+  if (data.clientId) return { clientId: data.clientId, clientSecret: await decrypt(env, data.clientSecretEnc), loginUrl: data.loginUrl || 'https://login.salesforce.com' };
+  return { clientId: env.SALESFORCE_CLIENT_ID || '', clientSecret: env.SALESFORCE_CLIENT_SECRET || '', loginUrl: data.loginUrl || 'https://login.salesforce.com' };
+}
+
+async function crmState(request, env, url) {
+  const user = await requireUser(request, env);
+  const data = await crmRecord(env, crmOwnerOf(user));
+  return json({
+    provider: 'salesforce', scope: user.org_id ? 'company' : 'personal', canManage: canManageCrm(user),
+    mkApp: Boolean(env.SALESFORCE_CLIENT_ID && env.SALESFORCE_CLIENT_SECRET), ownApp: Boolean(data.clientId), clientId: canManageCrm(user) ? data.clientId || '' : '',
+    loginUrl: data.loginUrl || 'https://login.salesforce.com', connected: Boolean(data.refreshEnc), userName: data.userName || '',
+    instanceUrl: data.instanceUrl || '', connectedAt: data.connectedAt || 0, autoSync: data.autoSync !== false,
+    callbackUrl: `${url.origin}/api/crm/salesforce/callback`,
+  });
+}
+
+async function crmSettings(request, env) {
+  const user = await requireUser(request, env);
+  if (!canManageCrm(user)) throw new HttpError(403, 'Only company administrators can change the Salesforce connection.');
+  const body = await readJson(request, 4000);
+  const owner = crmOwnerOf(user);
+  const data = await crmRecord(env, owner);
+  if (typeof body.autoSync === 'boolean') data.autoSync = body.autoSync;
+  if (typeof body.loginUrl === 'string') {
+    const host = salesforceHost(body.loginUrl.trim() || 'https://login.salesforce.com', env);
+    if (!host) throw new HttpError(400, 'Use your Salesforce login address, like https://login.salesforce.com or https://yourcompany.my.salesforce.com.');
+    data.loginUrl = host;
+  }
+  if (typeof body.clientId === 'string') {
+    data.clientId = text(body.clientId, 300);
+    if (!data.clientId) delete data.clientSecretEnc;
+  }
+  if (typeof body.clientSecret === 'string' && body.clientSecret.trim()) data.clientSecretEnc = await encrypt(env, text(body.clientSecret, 300));
+  if (data.clientId && !data.clientSecretEnc) throw new HttpError(400, 'Add the consumer secret too.');
+  await saveCrm(env, owner, data);
+  return json({ ok: true });
+}
+
+async function crmDisconnect(request, env) {
+  const user = await requireUser(request, env);
+  if (!canManageCrm(user)) throw new HttpError(403, 'Only company administrators can change the Salesforce connection.');
+  const owner = crmOwnerOf(user);
+  const data = await crmRecord(env, owner);
+  if (data.refreshEnc) await salesforceRevoke(await crmApp(env, data), await decrypt(env, data.refreshEnc)).catch(() => {});
+  for (const k of ['refreshEnc', 'accessEnc', 'instanceUrl', 'userName', 'connectedAt', 'connectedBy']) delete data[k];
+  await saveCrm(env, owner, data);
+  return json({ ok: true });
+}
+
+async function salesforceStart(request, env, url) {
+  const user = await currentUser(request, env);
+  const back = url.searchParams.get('back') === 'admin' ? '/admin' : '/contacts';
+  const fail = (error) => Response.redirect(`${url.origin}${back}?error=${encodeURIComponent(error)}`, 302);
+  if (!user) return Response.redirect(`${url.origin}/login`, 302);
+  if (!canManageCrm(user)) return fail('Only company administrators can connect Salesforce.');
+  const owner = crmOwnerOf(user);
+  const app = await crmApp(env, await crmRecord(env, owner));
+  if (!app.clientId || !app.clientSecret) return fail('Add your Salesforce consumer key and secret first.');
+  const state = randomToken();
+  const verifier = randomToken(48);
+  const saved = await signValue(env, { state, verifier, owner, userId: user.id, back, exp: Date.now() + 600_000 });
+  const location = salesforceAuthorizeUrl(app, { redirectUri: `${url.origin}/api/crm/salesforce/callback`, state, challenge: await sha256b64url(verifier) });
+  return new Response(null, { status: 302, headers: { location, 'set-cookie': flowCookie(url, CRM_COOKIE, saved, 600), 'cache-control': 'no-store' } });
+}
+
+async function salesforceCallback(request, env, url) {
+  const saved = await readSigned(env, readCookie(request, CRM_COOKIE));
+  const back = (saved && saved.back) || '/contacts';
+  const done = (q) => new Response(null, { status: 302, headers: { location: `${url.origin}${back}?${q}`, 'set-cookie': flowCookie(url, CRM_COOKIE, '', 0), 'cache-control': 'no-store' } });
+  const user = await currentUser(request, env);
+  if (!saved || !user || user.id !== saved.userId || saved.exp < Date.now() || saved.state !== url.searchParams.get('state')) {
+    return done(`error=${encodeURIComponent('The Salesforce connection took too long. Please try again.')}`);
+  }
+  if (url.searchParams.get('error')) return done(`error=${encodeURIComponent(url.searchParams.get('error_description') || 'Salesforce was not connected.')}`);
+  const data = await crmRecord(env, saved.owner);
+  const app = await crmApp(env, data);
+  try {
+    const t = await salesforceExchange(app, { code: url.searchParams.get('code') || '', redirectUri: `${url.origin}/api/crm/salesforce/callback`, verifier: saved.verifier });
+    const instanceUrl = salesforceHost(t.instance_url || '', env);
+    if (!instanceUrl || !t.refresh_token) throw new Error('Salesforce did not allow offline access. Add the "refresh_token" scope to the app.');
+    const who = await salesforceWho({ instanceUrl, accessToken: t.access_token });
+    Object.assign(data, {
+      refreshEnc: await encrypt(env, t.refresh_token), accessEnc: await encrypt(env, t.access_token), instanceUrl,
+      userName: who.userName || '', connectedAt: Date.now(), connectedBy: user.username, autoSync: data.autoSync !== false,
+    });
+    await saveCrm(env, saved.owner, data);
+    return done('crm=connected');
+  } catch (err) {
+    console.warn('Salesforce connection failed', String(err));
+    return done(`error=${encodeURIComponent(err.message || 'Salesforce was not connected.')}`);
+  }
+}
+
+// An authorised caller for the Salesforce API, which renews the access token when it has expired.
+async function salesforceSession(env, owner) {
+  const data = await crmRecord(env, owner);
+  if (!data.refreshEnc) return null;
+  const app = await crmApp(env, data);
+  let access = await decrypt(env, data.accessEnc);
+  const call = async (path, init = {}) => {
+    const send = () => fetch(data.instanceUrl + path, { ...init, headers: { ...(init.headers || {}), authorization: `Bearer ${access}`, accept: 'application/json' } });
+    let res = await send();
+    if (res.status === 401) {
+      const t = await salesforceRefresh(app, await decrypt(env, data.refreshEnc));
+      access = t.access_token;
+      data.accessEnc = await encrypt(env, access);
+      if (salesforceHost(t.instance_url || '', env)) data.instanceUrl = salesforceHost(t.instance_url, env);
+      await saveCrm(env, owner, data);
+      res = await send();
+    }
+    return res;
+  };
+  return { data, call };
+}
+
+async function pushContact(env, contactId) {
+  const row = await env.DB.prepare(
+    `SELECT k.id, k.data, k.source, COALESCE(k.user_id, c.user_id) AS owner_id, c.data AS card_data
+     FROM contacts k LEFT JOIN cards c ON c.id = k.card_id WHERE k.id = ?`,
+  ).bind(contactId).first();
+  if (!row) throw new HttpError(404, 'Contact not found.');
+  const owner = await userById(env, row.owner_id);
+  const sf = await salesforceSession(env, crmOwnerOf(owner));
+  if (!sf) throw new HttpError(409, owner.org_id ? 'Your company has not connected Salesforce yet.' : 'Connect Salesforce first.');
+  const card = row.card_data ? readCard(row.card_data) : null;
+  const main = card || readCard((await env.DB.prepare("SELECT data FROM cards WHERE user_id = ? ORDER BY slug = '' DESC LIMIT 1").bind(owner.id).first() || { data: '{"name":""}' }).data);
+  try {
+    const r = await salesforcePushLead(sf.call, { ...JSON.parse(row.data), source: row.source }, {
+      ownerEmail: owner.email, capturedBy: main.name || owner.username, cardLabel: card ? card.label || card.name : '',
+    });
+    const id = r.id || 'duplicate';
+    await env.DB.prepare('UPDATE contacts SET crm_id = ?, crm_error = NULL, crm_at = ? WHERE id = ?').bind(id, Date.now(), contactId).run();
+    return { id, duplicate: Boolean(r.duplicate), instanceUrl: sf.data.instanceUrl };
+  } catch (err) {
+    await env.DB.prepare('UPDATE contacts SET crm_error = ? WHERE id = ?').bind(text(err.message, 300), contactId).run();
+    throw new HttpError(502, `Salesforce: ${err.message}`);
+  }
+}
+
+async function sendContactToCrm(request, env, url, id) {
+  await myContact(request, env, id);
+  return json(await pushContact(env, id));
+}
+
+// New contacts go to Salesforce straight away when the connection is set to do so.
+function autoSync(env, url, userId, contactId) {
+  const job = (async () => {
+    const owner = await userById(env, userId);
+    const data = owner && await crmRecord(env, crmOwnerOf(owner));
+    if (data && data.refreshEnc && data.autoSync !== false) await pushContact(env, contactId);
+  })().catch((err) => console.warn('Automatic Salesforce sync failed', String(err)));
+  if (env.waitUntil) env.waitUntil(job);
+}
+
+// The card's QR code as a public picture, for email signatures and backgrounds.
+async function publicQr(env, url) {
+  const row = await findCard(env, url.searchParams.get('u'), url.searchParams.get('s'));
+  if (!row || !row.active || !row.user_active) return new Response('Not found', { status: 404 });
+  const link = `${url.origin}/${row.username}${row.slug ? '/' + row.slug : ''}`;
+  return new Response(await qrPng(link), { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' } });
 }
 
 // ---------- media (photos and drawn pictures, stored apart from card records) ----------
@@ -1144,7 +1782,7 @@ async function publicVCard(env, url) {
   });
 }
 
-async function addContact(request, env) {
+async function addContact(request, env, url) {
   const body = await readJson(request);
   const row = await findCard(env, body.u, body.s);
   if (!row) throw new HttpError(404, 'Card not found.');
@@ -1164,8 +1802,9 @@ async function addContact(request, env) {
   const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM contacts WHERE card_id = ?').bind(row.id).first();
   if (count.n >= MAX_CONTACTS_PER_CARD) throw new HttpError(429, 'This card cannot receive more contacts right now.');
 
-  await env.DB.prepare('INSERT INTO contacts (card_id, data, created_at) VALUES (?, ?, ?)')
-    .bind(row.id, JSON.stringify(contact), Date.now()).run();
+  const saved = await env.DB.prepare("INSERT INTO contacts (card_id, data, created_at, user_id, source) VALUES (?, ?, ?, ?, 'form') RETURNING id")
+    .bind(row.id, JSON.stringify(contact), Date.now(), row.user_id).first();
+  autoSync(env, url, row.user_id, saved.id);
   return json({ ok: true }, 201);
 }
 

@@ -22,14 +22,25 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>MKSiteURL</key>
 	<string>$(MK_SITE_URL)</string>
-	<key>NSContactsUsageDescription</key>
-	<string>MK Cards adds the contacts you choose to save to your phone's Contacts.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Choose a photo for your business card.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Take a photo for your business card.</string>
+	<string>MK Cards uses the camera to scan business cards and event badges, and to take a photo for your card.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a photo or logo for your business card.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save your QR code and video-call background to Photos.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>MK Cards adds the contacts you choose to save to your iPhone's Contacts.</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>MK Cards writes your card's link to NFC tags, so a tap opens your card.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
@@ -38,13 +49,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>

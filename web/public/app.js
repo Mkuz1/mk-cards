@@ -1,12 +1,14 @@
 // MK Cards — single-page app. No build step: plain ES modules.
-import { ART_VERSION, cardTheme, drawCardArt, hexRgb, mixHex } from './card-art.js';
+import { ART_VERSION, cardTheme, drawCallBackground, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.2.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.3.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
 const toasts = document.getElementById('toasts');
-const native = window.MKNative || null; // provided by the Android app
+const native = window.MKNative || null; // provided by the Android and iPhone apps
+// The iPhone app has its own tab bar, so the page's top navigation is hidden there.
+const inAppTabs = Boolean(native && native.hasTabBar);
 
 // ---------- tiny DOM helpers ----------
 
@@ -56,6 +58,14 @@ const ICONS = {
   qr: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 14h2M14 18h2v2M19 17v3"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  scan: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/>',
+  signature: '<path d="M3 17c3-1 4-9 7-9 2 0-1 8 1 8 1.5 0 2.5-3 4-3 1 0 .5 2 1.5 2H21M3 21h18"/>',
+  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  cloud: '<path d="M7 18a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.6 1.5A3.75 3.75 0 0 1 17.25 18H7z"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  shield: '<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/>',
+  type: '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>',
 };
 
 // Solid icons for the card itself (as in the reference design); line icons everywhere else.
@@ -118,6 +128,7 @@ async function api(path, { method = 'GET', body } = {}) {
     // The session ended somewhere else (expired, or logged out on another device).
     if (res.status === 401 && me.user && !path.startsWith('/auth/')) {
       me = { user: null, cards: [] };
+      if (native && native.signedOut) native.signedOut();
       go('/login');
     }
     throw err;
@@ -615,7 +626,7 @@ function registerScreen() {
       me = await api('/auth/register', { method: 'POST', body: data });
       go('/new');
     },
-    footer: h('p', { class: 'center muted' }, 'Already have an account? ', h('a', { href: '/login' }, 'Log in')),
+    footer: [ssoButtons('Sign up'), h('p', { class: 'center muted' }, 'Already have an account? ', h('a', { href: '/login' }, 'Log in'))],
   });
 }
 
@@ -633,7 +644,7 @@ function loginScreen() {
       me = await api('/auth/login', { method: 'POST', body: data });
       go(me.cards.length ? '/' : '/new');
     },
-    footer: h('p', { class: 'center muted' }, 'New here? ', h('a', { href: '/register' }, 'Create an account')),
+    footer: [ssoButtons('Continue'), h('p', { class: 'center muted' }, 'New here? ', h('a', { href: '/register' }, 'Create an account'))],
   });
 }
 
@@ -669,6 +680,7 @@ function homeScreen() {
       h('p', { class: 'muted' }, 'Make a card for each audience and share its link or QR code. Your links: ',
         h('strong', {}, `${location.host}/${me.user.username}/…`))),
     h('div', { class: 'head-actions' },
+      h('a', { class: 'btn', href: '/scan' }, icon('scan'), 'Scan a card'),
       h('a', { class: 'btn', href: '/api/me/activity.csv', download: 'mkcards-activity.csv' }, icon('download'), 'Activity CSV'),
       me.cards.length < MAX_CARDS && h('a', { class: 'btn primary', href: '/new' }, icon('plus'), 'New card')));
 
@@ -714,6 +726,9 @@ function cardMenu(entry) {
     h('h1', { dir: 'auto' }, entry.card.label || entry.card.name),
     h('a', { class: 'btn block', href: `/share/${entry.id}`, onclick: close }, icon('share'), 'Share page and QR codes'),
     h('a', { class: 'btn block', href: `/inbox/${entry.id}`, onclick: close }, icon('inbox'), entry.contacts ? `Contacts sent to you (${entry.contacts})` : 'Contacts sent to you'),
+    h('div', { class: 'row' },
+      h('a', { class: 'btn grow', href: `/signature/${entry.id}`, onclick: close }, icon('signature'), 'Email signature'),
+      h('a', { class: 'btn grow', href: `/background/${entry.id}`, onclick: close }, icon('monitor'), 'Call background')),
     h('div', { class: 'row' }, qrDownloadButton(entry, 'png', 'QR as PNG', 'btn grow'), qrDownloadButton(entry, 'svg', 'QR as SVG', 'btn grow')),
     walletButtons(entry),
     h('button', { class: 'btn block', onclick: () => { close(); cardStatusSheet(entry); } }, icon('power'), entry.active ? 'Turn this card off' : 'Turn this card back on'),
@@ -1064,6 +1079,9 @@ function shareScreen(id) {
         qrDownloadButton(entry, 'svg', 'QR as SVG', 'btn grow')),
       walletButtons(entry)),
     h('div', { class: 'row' },
+      h('a', { class: 'btn grow', href: `/signature/${entry.id}` }, icon('signature'), 'Email signature'),
+      h('a', { class: 'btn grow', href: `/background/${entry.id}` }, icon('monitor'), 'Call background')),
+    h('div', { class: 'row' },
       h('a', { class: 'btn grow', href: cardPath(entry) }, 'Preview'),
       h('a', { class: 'btn grow', href: `/edit/${entry.id}` }, icon('edit'), 'Edit')));
 
@@ -1270,12 +1288,20 @@ function settingsScreen() {
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'Account'),
       h('div', { class: 'row' }, h('span', { class: 'grow' }, 'Username'), h('span', { class: 'pill' }, '@' + me.user.username)),
       h('div', { class: 'row' }, h('span', { class: 'grow' }, 'Email'), h('span', { class: 'muted small', style: 'overflow-wrap:anywhere;text-align:right' }, me.user.email)),
-      h('button', { class: 'btn block', onclick: changePasswordSheet }, 'Change password'),
+      h('button', { class: 'btn block', onclick: changePasswordSheet }, me.user.hasPassword === false ? 'Add a password' : 'Change password'),
       h('button', { class: 'btn block', onclick: async () => {
         try { await api('/auth/logout', { method: 'POST' }); } catch (err) { return toast(err.message); }
         me = { user: null, cards: [] };
+        if (native && native.signedOut) native.signedOut();
         go('/');
       } }, 'Log out')),
+    signInSection(),
+    h('section', { class: 'glass panel stack' }, h('h2', {}, 'Tools'),
+      h('a', { class: 'btn block', href: '/contacts' }, icon('users'), 'Contacts and Salesforce'),
+      h('a', { class: 'btn block', href: '/scan' }, icon('scan'), 'Scan a business card or badge'),
+      me.cards[0] && h('a', { class: 'btn block', href: `/signature/${me.cards[0].id}` }, icon('signature'), 'Email signature'),
+      me.cards[0] && h('a', { class: 'btn block', href: `/background/${me.cards[0].id}` }, icon('monitor'), 'Video-call background'),
+      inAppTabs && h('a', { class: 'btn block', href: '/admin' }, icon('building'), me.user.org && me.user.org.role !== 'member' ? 'Company admin' : 'Company workspace')),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'App'),
       h('div', { class: 'row' }, h('span', { class: 'grow' }, 'Version'),
         h('span', { class: 'pill' }, appVersion ? `${appVersion} · web ${APP_VERSION}` : APP_VERSION)),
@@ -1299,16 +1325,18 @@ function changePasswordSheet() {
         button.disabled = true;
         await api('/me/password', { method: 'POST', body: { current: data.current, next: data.next } });
         close();
-        toast('Password changed');
+        toast(me.user.hasPassword === false ? 'Password added' : 'Password changed');
+        me.user.hasPassword = true;
       } catch (err) {
         errorLine.textContent = err.message;
         errorLine.hidden = false;
         button.disabled = false;
       }
     } },
-      h('h1', {}, 'Change password'),
+      h('h1', {}, me.user.hasPassword === false ? 'Add a password' : 'Change password'),
+      me.user.hasPassword === false && h('p', { class: 'muted small' }, 'You sign in with Microsoft, Google or Apple. A password lets you also sign in with your username.'),
       h('input', { type: 'text', name: 'username', autocomplete: 'username', value: me.user.username, hidden: true }),
-      h('label', { class: 'field' }, h('span', {}, 'Current password'),
+      me.user.hasPassword !== false && h('label', { class: 'field' }, h('span', {}, 'Current password'),
         h('input', { class: 'input', name: 'current', type: 'password', autocomplete: 'current-password', required: true })),
       h('label', { class: 'field' }, h('span', {}, 'New password'),
         h('input', { class: 'input', name: 'next', type: 'password', autocomplete: 'new-password', minlength: 8, maxlength: 200, required: true }),
@@ -1330,9 +1358,11 @@ function confirmDeleteAccount() {
       errorLine.hidden = true;
       button.disabled = true;
       try {
-        await api('/me', { method: 'DELETE', body: { password: new FormData(e.target).get('password') } });
+        const form = new FormData(e.target);
+        await api('/me', { method: 'DELETE', body: { password: form.get('password'), confirm: form.get('confirm') } });
         me = { user: null, cards: [] };
         close();
+        if (native && native.signedOut) native.signedOut();
         toast('Your account was deleted');
         go('/');
       } catch (err) {
@@ -1342,9 +1372,13 @@ function confirmDeleteAccount() {
       }
     } },
       h('h1', {}, 'Delete your account?'),
-      h('p', { class: 'muted' }, 'Everything is removed for good and cannot be brought back. Enter your password to confirm.'),
-      h('label', { class: 'field' }, h('span', {}, 'Password'),
-        h('input', { class: 'input', name: 'password', type: 'password', autocomplete: 'current-password', required: true })),
+      h('p', { class: 'muted' }, me.user.hasPassword === false
+        ? `Everything is removed for good and cannot be brought back. Type your username (${me.user.username}) to confirm.`
+        : 'Everything is removed for good and cannot be brought back. Enter your password to confirm.'),
+      me.user.hasPassword === false
+        ? h('label', { class: 'field' }, h('span', {}, 'Username'), h('input', { class: 'input', name: 'confirm', autocapitalize: 'none', autocomplete: 'off', required: true }))
+        : h('label', { class: 'field' }, h('span', {}, 'Password'),
+          h('input', { class: 'input', name: 'password', type: 'password', autocomplete: 'current-password', required: true })),
       errorLine, button,
       h('button', { class: 'btn block', type: 'button', onclick: close }, 'Keep my account'));
   });
@@ -1410,7 +1444,8 @@ function adminScreen() {
           h('button', { class: 'btn small', onclick: downloadTemplate }, icon('download'), 'Import template'),
           h('a', { class: 'btn small', href: '/api/org/members.csv', download: 'mkcards-members.csv' }, icon('download'), 'Export people'),
           h('a', { class: 'btn small', href: '/api/org/activity.csv', download: 'mkcards-company-activity.csv' }, icon('chart'), 'Activity CSV')),
-        search, list));
+        search, list),
+      h('div', { class: 'two-col' }, companySignInPanel(data.sso, load), crmPanel('admin')));
     drawList();
   };
   load();
@@ -1631,7 +1666,635 @@ function missingScreen(message, title = 'Card not found') {
     h('a', { class: 'btn primary', href: '/' }, 'Go to MK Cards'));
 }
 
+// ---------- messages carried back in the address (after signing in elsewhere) ----------
+
+const FLASH = {
+  linked: (v) => `${SSO_LABELS[v] || 'Account'} connected. You can now sign in with it.`,
+  sso: (v) => `${SSO_LABELS[v] || 'Company'} sign-in is connected for your company.`,
+  crm: () => 'Salesforce is connected.',
+};
+
+function flashFromUrl() {
+  const q = new URLSearchParams(location.search);
+  let changed = false;
+  if (q.get('error')) { toast(q.get('error')); q.delete('error'); changed = true; }
+  for (const [key, message] of Object.entries(FLASH)) {
+    if (q.has(key)) { toast(message(q.get(key))); q.delete(key); changed = true; }
+  }
+  if (changed) history.replaceState(null, '', location.pathname + (q.toString() ? `?${q}` : ''));
+}
+
+// ---------- sign-in with Microsoft, Google and Apple ----------
+
+const SSO_LABELS = { microsoft: 'Microsoft', google: 'Google', apple: 'Apple' };
+const SSO_GLYPHS = {
+  microsoft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#f25022" d="M3 3h8.6v8.6H3z"/><path fill="#7fba00" d="M12.4 3H21v8.6h-8.6z"/><path fill="#00a4ef" d="M3 12.4h8.6V21H3z"/><path fill="#ffb900" d="M12.4 12.4H21V21h-8.6z"/></svg>',
+  google: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.36-.18-2.02H12v3.83h5.39a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.9-1.75 2.98-4.32 2.98-7.33z"/><path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.43l-3.23-2.5c-.9.6-2.04.96-3.39.96-2.6 0-4.81-1.76-5.6-4.12H3.07v2.58A10 10 0 0 0 12 22z"/><path fill="#FBBC05" d="M6.4 13.9a6 6 0 0 1 0-3.8V7.52H3.07a10 10 0 0 0 0 8.96z"/><path fill="#EA4335" d="M12 5.98c1.47 0 2.79.5 3.83 1.5l2.86-2.86A10 10 0 0 0 3.07 7.52L6.4 10.1C7.19 7.74 9.4 5.98 12 5.98z"/></svg>',
+  apple: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9-.7 0-1.9-.8-3.1-.8-1.6 0-3 .9-3.9 2.300-1.7 2.900-.4 7.200 1.200 9.500.8 1.100 1.700 2.400 2.900 2.400 1.200-.1 1.600-.8 3-.8s1.800.8 3.100.8c1.300 0 2.100-1.200 2.800-2.300.9-1.300 1.300-2.600 1.300-2.700 0 0-2.400-.9-2.400-3.700zM14.200 5.800c.6-.8 1.100-1.800 1-2.800-.9 0-2 .6-2.700 1.400-.6.700-1.100 1.700-1 2.700 1 .1 2-.5 2.700-1.300z"/></svg>',
+};
+
+function ssoGlyph(provider) {
+  const span = h('span', { class: 'sso-glyph' });
+  span.innerHTML = SSO_GLYPHS[provider];
+  return span;
+}
+
+// "Continue with Microsoft / Google" on the sign-in pages, once MK Cards has been registered with each.
+function ssoButtons(verb) {
+  const status = me.sso || {};
+  const list = ['microsoft', 'google'].filter((p) => status[p]);
+  if (!list.length) return null;
+  return h('div', { class: 'sso-block' },
+    h('p', { class: 'divider' }, h('span', {}, 'or')),
+    ...list.map((p) => h('a', { class: 'btn block sso-btn', href: `/api/auth/sso/${p}/start` }, ssoGlyph(p), `${verb} with ${SSO_LABELS[p]}`)),
+    h('p', { class: 'small muted center' }, 'Use your work account if your company has set up MK Cards.'));
+}
+
+async function startSso(provider, mode) {
+  try {
+    const { ticket } = await api('/auth/ticket', { method: 'POST', body: { mode } });
+    location.href = `/api/auth/sso/${provider}/start?mode=${mode}&ticket=${encodeURIComponent(ticket)}`;
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+function signInSection() {
+  const status = me.sso || {};
+  const ids = me.user.identities || [];
+  const rows = ['microsoft', 'google', 'apple'].filter((p) => status[p] || ids.some((i) => i.provider === p)).map((p) => {
+    const id = ids.find((i) => i.provider === p);
+    return h('div', { class: 'row signin-row' }, ssoGlyph(p),
+      h('span', { class: 'grow' }, h('strong', {}, SSO_LABELS[p]), h('small', { class: 'muted block' }, id ? id.email || 'Connected' : 'Not connected')),
+      id ? h('button', { class: 'btn small', onclick: async () => {
+        try { await api(`/me/identities/${p}`, { method: 'DELETE' }); await loadMe(); render(); toast(`${SSO_LABELS[p]} disconnected`); }
+        catch (err) { toast(err.message); }
+      } }, 'Disconnect') : p !== 'apple' && h('button', { class: 'btn small', onclick: () => startSso(p, 'link') }, 'Connect'));
+  });
+  return h('section', { class: 'glass panel stack' }, h('h2', {}, 'Sign-in methods'),
+    h('div', { class: 'row signin-row' }, h('span', { class: 'sso-glyph key' }, icon('key')),
+      h('span', { class: 'grow' }, h('strong', {}, 'Password'), h('small', { class: 'muted block' }, me.user.hasPassword === false ? 'Not set' : 'Set'))),
+    ...rows,
+    !rows.length && h('p', { class: 'small muted' }, 'Microsoft and Google sign-in will appear here once they are switched on for MK Cards.'));
+}
+
+// Company sign-in, on the admin page: an administrator connects the company's Microsoft tenant or Google
+// Workspace domain by signing in with it once. People from that company can then sign in with their work account.
+function companySignInPanel(info, reload) {
+  const panel = h('section', { class: 'glass panel stack' });
+  const draw = (sso) => {
+    const claimed = (p) => sso.claims.find((c) => c.provider === p);
+    const available = ['microsoft', 'google'].filter((p) => sso.available[p] || claimed(p));
+    panel.replaceChildren(
+      h('div', { class: 'row' }, h('span', { class: 'panel-icon' }, icon('shield')), h('h2', { class: 'grow' }, 'Company sign-in')),
+      h('p', { class: 'muted small' }, 'Let your people sign in with their Microsoft 365 or Google Workspace account. Connect your company by signing in once with an administrator\'s work account.'),
+      ...(available.length ? available.map((p) => {
+        const c = claimed(p);
+        return h('div', { class: 'row signin-row' }, ssoGlyph(p),
+          h('span', { class: 'grow' }, h('strong', {}, SSO_LABELS[p]), h('small', { class: 'muted block' }, c ? `Connected: ${c.label}` : 'Not connected')),
+          c ? h('button', { class: 'btn small', onclick: async () => {
+            try { draw(await api(`/org/sso/${p}`, { method: 'DELETE' })); toast('Disconnected'); } catch (err) { toast(err.message); }
+          } }, 'Disconnect') : h('button', { class: 'btn small primary', onclick: () => startSso(p, 'claim') }, 'Connect'));
+      }) : [h('p', { class: 'small muted' }, 'Microsoft and Google sign-in are not switched on for MK Cards yet.')]),
+      sso.claims.length > 0 && h('label', { class: 'check' },
+        h('input', { type: 'checkbox', checked: sso.autoCreate, onchange: (e) => save({ ...sso, autoCreate: e.target.checked }) }),
+        h('span', {}, h('strong', {}, 'Add new people automatically'), h('small', { class: 'muted block' }, 'Anyone in your company who signs in gets an account and a card in the company colours.'))),
+      sso.claims.length > 0 && h('label', { class: 'check' },
+        h('input', { type: 'checkbox', checked: sso.requireSso, onchange: (e) => save({ ...sso, requireSso: e.target.checked }) }),
+        h('span', {}, h('strong', {}, 'Require company sign-in'), h('small', { class: 'muted block' }, 'Members can no longer sign in with a password. The owner always can.'))));
+  };
+  const save = async (next) => {
+    try { draw(await api('/org/sso', { method: 'PUT', body: { autoCreate: next.autoCreate, requireSso: next.requireSso } })); toast('Saved'); }
+    catch (err) { toast(err.message); reload(); }
+  };
+  draw(info || { claims: [], available: {}, autoCreate: false, requireSso: false });
+  return panel;
+}
+
+// ---------- Salesforce ----------
+
+function crmPanel(back = 'contacts') {
+  const panel = h('section', { class: 'glass panel stack crm-panel' }, h('p', { class: 'muted' }, 'Loading Salesforce…'));
+  const head = () => h('div', { class: 'row' }, h('span', { class: 'panel-icon sf' }, icon('cloud')), h('h2', { class: 'grow' }, 'Salesforce'));
+  const load = async () => {
+    let st;
+    try { st = await api('/crm'); } catch (err) { panel.replaceChildren(head(), h('p', { class: 'error' }, err.message)); return; }
+    crmConnected = st.connected;
+    const connectHref = `/api/crm/salesforce/start${back === 'admin' ? '?back=admin' : ''}`;
+    if (st.connected) {
+      panel.replaceChildren(head(),
+        h('p', {}, h('span', { class: 'pill ok' }, icon('check'), 'Connected'), ' ', h('span', { class: 'muted small' }, st.userName ? `as ${st.userName}` : '')),
+        h('p', { class: 'small muted' }, st.scope === 'company' ? 'Contacts captured by everyone in your company are sent to your company\'s Salesforce as leads, owned by the card holder when they are a Salesforce user.' : 'Your contacts are sent to Salesforce as leads.'),
+        st.canManage && h('label', { class: 'check' },
+          h('input', { type: 'checkbox', checked: st.autoSync, onchange: async (e) => {
+            try { await api('/crm', { method: 'PUT', body: { autoSync: e.target.checked } }); toast('Saved'); } catch (err) { toast(err.message); }
+          } }), h('span', {}, h('strong', {}, 'Send new contacts automatically'), h('small', { class: 'muted block' }, 'Otherwise, send them one by one from the contact list.'))),
+        st.canManage && h('div', { class: 'row' },
+          h('a', { class: 'btn small', href: connectHref }, 'Reconnect'),
+          h('button', { class: 'btn small danger', onclick: async () => {
+            try { await api('/crm', { method: 'DELETE' }); toast('Salesforce disconnected'); load(); } catch (err) { toast(err.message); }
+          } }, 'Disconnect')));
+      return;
+    }
+    if (!st.canManage) {
+      panel.replaceChildren(head(), h('p', { class: 'small muted' }, 'Your company has not connected Salesforce yet. Ask a company administrator to connect it on the Admin page.'));
+      return;
+    }
+    const form = { loginUrl: st.loginUrl, clientId: st.clientId, clientSecret: '' };
+    const input = (label, key, attrs = {}) => h('label', { class: 'field' }, h('span', {}, label),
+      h('input', { class: 'input', value: form[key] || '', autocomplete: 'off', spellcheck: 'false', ...attrs, oninput: (e) => { form[key] = e.target.value; } }));
+    const own = h('details', { class: 'own-app', open: !st.mkApp || st.ownApp },
+      h('summary', {}, st.mkApp ? 'Use your own Salesforce app (optional)' : 'Your Salesforce app'),
+      h('div', { class: 'stack' },
+        h('p', { class: 'small muted' }, 'In Salesforce Setup, open App Manager and create an External Client App with OAuth turned on. Use this callback URL, and the scopes "Manage user data via APIs (api)" and "Perform requests at any time (refresh_token, offline_access)". Require PKCE. Then copy its consumer key and secret here.'),
+        h('div', { class: 'linkbox small' }, st.callbackUrl),
+        input('Salesforce login address', 'loginUrl', { placeholder: 'https://login.salesforce.com', inputmode: 'url' }),
+        h('p', { class: 'small muted' }, 'Use https://test.salesforce.com for a sandbox, or your My Domain address.'),
+        input('Consumer key', 'clientId'),
+        input('Consumer secret', 'clientSecret', { type: 'password', placeholder: st.ownApp ? 'Saved — type to replace' : '' }),
+        h('button', { class: 'btn small', onclick: async () => {
+          try { await api('/crm', { method: 'PUT', body: form }); toast('Saved'); load(); } catch (err) { toast(err.message); }
+        } }, 'Save app details')));
+    panel.replaceChildren(head(),
+      h('p', { class: 'small muted' }, 'Send the people you meet to Salesforce as leads: contacts shared on your card pages and cards or badges you scan.'),
+      (st.mkApp || st.ownApp) ? h('a', { class: 'btn primary block', href: connectHref }, icon('cloud'), 'Connect Salesforce') : null,
+      own);
+  };
+  load();
+  return panel;
+}
+let crmConnected = false;
+
+// ---------- contacts ----------
+
+const SOURCE_LABELS = { form: 'Shared on your card', scan: 'Scanned card', badge: 'Scanned badge', manual: 'Added by hand' };
+
+function contactsScreen() {
+  const list = h('div', { class: 'contact-list' }, h('p', { class: 'muted' }, 'Loading…'));
+  const search = h('input', { class: 'input', type: 'search', placeholder: 'Search contacts', 'aria-label': 'Search contacts' });
+  let contacts = [];
+  const crm = crmPanel('contacts');
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const shown = contacts.filter((c) => !q || [c.name, c.company, c.email, c.phone, c.title, c.event].join(' ').toLowerCase().includes(q));
+    if (!contacts.length) {
+      list.replaceChildren(h('div', { class: 'empty center' },
+        h('span', { class: 'empty-icon' }, icon('users')),
+        h('p', { class: 'strong' }, 'No contacts yet'),
+        h('p', { class: 'muted small' }, 'Scan the business cards and badges of people you meet, or let visitors share their details on your card page.'),
+        h('a', { class: 'btn primary', href: '/scan' }, icon('scan'), 'Scan a card')));
+      return;
+    }
+    list.replaceChildren(...(shown.length ? shown.map(contactItem) : [h('p', { class: 'muted center' }, 'No one matches that search.')]));
+  };
+  const contactItem = (c) => {
+    const status = h('span', { class: 'crm-status' });
+    const drawStatus = () => {
+      if (c.crm) status.replaceChildren(h('span', { class: 'pill ok' }, icon('check'), c.crm.id === 'duplicate' ? 'Already in Salesforce' : 'In Salesforce'));
+      else if (crmConnected) {
+        status.replaceChildren(h('button', { class: 'btn small', onclick: async (e) => {
+          e.target.disabled = true;
+          try { const r = await api(`/contacts/${c.id}/crm`, { method: 'POST' }); c.crm = { id: r.id }; c.crmError = ''; toast(r.duplicate ? 'Already in Salesforce' : 'Sent to Salesforce'); }
+          catch (err) { c.crmError = err.message; toast(err.message); }
+          drawStatus();
+        } }, icon('cloud'), 'Send to Salesforce'), c.crmError && h('small', { class: 'error block' }, c.crmError));
+      } else status.replaceChildren();
+    };
+    drawStatus();
+    const role = [c.title, c.company].filter(Boolean).join(' · ');
+    return h('article', { class: 'contact' },
+      h('span', { class: 'contact-avatar' }, initials(c.name)),
+      h('div', { class: 'grow' },
+        h('p', { class: 'who', dir: 'auto' }, c.name),
+        role && h('p', { class: 'small', dir: 'auto' }, role),
+        h('p', { class: 'small links' }, c.email && h('a', { href: 'mailto:' + c.email }, c.email), c.phone && h('a', { href: telHref(c.phone) }, c.phone), c.mobile && h('a', { href: telHref(c.mobile) }, c.mobile)),
+        h('p', { class: 'small muted' }, [shortDate(c.createdAt), SOURCE_LABELS[c.source] || '', c.event].filter(Boolean).join(' · ')),
+        c.note && h('p', { class: 'small muted note' }, c.note),
+        status),
+      h('div', { class: 'contact-actions' },
+        h('button', { class: 'btn icon', title: 'Save to phone', 'aria-label': `Save ${c.name} to your phone`,
+          onclick: () => saveVCard(vcardFromContact(c), `${c.name.replace(/[^\w-]+/g, '-') || 'contact'}.vcf`) }, icon('save')),
+        h('button', { class: 'btn icon danger', title: 'Remove', 'aria-label': `Remove ${c.name}`, onclick: async () => {
+          if (!confirm(`Remove ${c.name} from your contacts?`)) return;
+          try { await api(`/contacts/${c.id}`, { method: 'DELETE' }); contacts = contacts.filter((x) => x !== c); draw(); }
+          catch (err) { toast(err.message); }
+        } }, icon('trash'))));
+  };
+  search.addEventListener('input', draw);
+  const load = async () => {
+    try { ({ contacts } = await api('/contacts')); draw(); }
+    catch (err) { list.replaceChildren(h('p', { class: 'error' }, err.message)); }
+  };
+  // The list waits for the Salesforce status, so each contact shows the right button.
+  setTimeout(load, 250);
+  return h('div', { class: 'stack wide-stack' },
+    h('header', { class: 'page-head' },
+      h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, 'Leads'), h('h1', {}, 'Contacts'),
+        h('p', { class: 'muted' }, 'People who shared their details on your card pages, and the cards and badges you scanned.')),
+      h('div', { class: 'head-actions' },
+        h('a', { class: 'btn', href: '/api/contacts.csv', download: 'mkcards-contacts.csv' }, icon('download'), 'Export CSV'),
+        h('a', { class: 'btn primary', href: '/scan' }, icon('scan'), 'Scan a card'))),
+    h('div', { class: 'contacts-layout' },
+      h('section', { class: 'glass panel stack' }, search, list),
+      h('div', { class: 'stack' }, crm)));
+}
+
+// ---------- scanning business cards and badges ----------
+
+let scanHandler = null; // the scan screen on show; the iPhone app hands its scans here
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const el = h('script', { src });
+    el.onload = resolve;
+    el.onerror = () => reject(new Error('Could not load ' + src));
+    document.head.append(el);
+  });
+}
+
+async function decodeQr(canvas) {
+  try {
+    if ('BarcodeDetector' in window) {
+      const found = await new window.BarcodeDetector({ formats: ['qr_code'] }).detect(canvas);
+      if (found[0]) return found[0].rawValue;
+    }
+  } catch { /* fall back to jsQR */ }
+  try {
+    if (!window.jsQR) await loadScript('/vendor/jsqr.js');
+    const ctx = canvas.getContext('2d');
+    const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const hit = window.jsQR(data, width, height, { inversionAttempts: 'attemptBoth' });
+    return hit ? hit.data : '';
+  } catch {
+    return '';
+  }
+}
+
+function unescapeV(value) {
+  return String(value || '').replace(/\\n/gi, '\n').replace(/\\([,;:\\])/g, '$1').trim();
+}
+
+/** Contact details from a QR code: a vCard, a MECARD, or an MK Cards link. */
+async function contactFromQr(value) {
+  const v = String(value || '').trim();
+  if (/^BEGIN:VCARD/i.test(v)) {
+    const c = {};
+    const lines = v.replace(/\r?\n[ \t]/g, '').split(/\r?\n/);
+    for (const line of lines) {
+      const i = line.indexOf(':');
+      if (i < 0) continue;
+      const [key, ...params] = line.slice(0, i).split(';');
+      const val = unescapeV(line.slice(i + 1));
+      const k = key.toUpperCase().replace(/^ITEM\d+\./, '');
+      const p = params.join(';').toUpperCase();
+      if (k === 'FN') c.name = val;
+      else if (k === 'N' && !c.name) c.name = val.split(';').slice(0, 2).reverse().join(' ').trim();
+      else if (k === 'ORG') c.company = val.split(';')[0];
+      else if (k === 'TITLE') c.title = val;
+      else if (k === 'EMAIL' && !c.email) c.email = val;
+      else if (k === 'TEL') { if (/CELL/.test(p) && !c.mobile) c.mobile = val; else if (!c.phone) c.phone = val; }
+      else if (k === 'URL' && !c.website && !/wa\.me/.test(val)) c.website = val;
+      else if (k === 'ADR' && !c.address) c.address = val.split(';').filter(Boolean).join(', ');
+      else if (k === 'NOTE') c.note = val;
+    }
+    return c;
+  }
+  if (/^MECARD:/i.test(v)) {
+    const c = {};
+    for (const part of v.slice(7).split(/(?<!\\);/)) {
+      const i = part.indexOf(':');
+      if (i < 0) continue;
+      const k = part.slice(0, i).toUpperCase();
+      const val = unescapeV(part.slice(i + 1));
+      if (k === 'N') c.name = val.includes(',') ? val.split(',').reverse().join(' ').trim() : val;
+      else if (k === 'TEL' && !c.phone) c.phone = val;
+      else if (k === 'EMAIL') c.email = val;
+      else if (k === 'URL') c.website = val;
+      else if (k === 'ADR') c.address = val;
+      else if (k === 'ORG') c.company = val;
+      else if (k === 'NOTE') c.note = val;
+    }
+    return c;
+  }
+  if (/^https?:\/\//i.test(v)) {
+    const url = new URL(v);
+    const m = /^\/([a-z0-9][a-z0-9_-]{2,29})(?:\/([a-z0-9][a-z0-9-]{0,29}))?\/?$/i.exec(url.pathname);
+    if (url.host === location.host && m) {
+      try {
+        const data = await api(`/public/card?u=${encodeURIComponent(m[1])}&s=${encodeURIComponent(m[2] || '')}`);
+        const card = data.card;
+        if (card && card.name) {
+          return { name: card.name, title: card.title, company: card.company, email: (card.emails || [])[0]?.value,
+            phone: (card.phones || []).find((p) => p.label !== 'mobile')?.value, mobile: (card.phones || []).find((p) => p.label === 'mobile')?.value,
+            website: card.website || v, address: card.address };
+        }
+      } catch { /* treat as a plain link */ }
+    }
+    return { website: v };
+  }
+  return v ? { note: v.slice(0, 400) } : null;
+}
+
+// A rough reading of plain text from a card, used only when the AI reader is not available.
+function contactFromText(textIn) {
+  const t = String(textIn || '');
+  const lines = t.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const email = (t.match(/[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}/i) || [])[0] || '';
+  const phones = t.match(/\+?\d[\d\s().-]{6,}\d/g) || [];
+  const website = (t.match(/\b(?:https?:\/\/)?(?:www\.)[^\s,;]+/i) || [])[0] || '';
+  const name = lines.find((l) => /^[\p{L}][\p{L}.'-]+(\s[\p{L}][\p{L}.'-]+){1,3}$/u.test(l) && !/@|\d/.test(l)) || '';
+  return { name, email, phone: phones[0] || '', mobile: phones[1] || '', website };
+}
+
+async function downscale(source, max = 1600) {
+  const img = source instanceof Blob ? await loadImage(URL.createObjectURL(source)) : await loadImage(source);
+  const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = Object.assign(document.createElement('canvas'), { width: Math.round(img.naturalWidth * scale), height: Math.round(img.naturalHeight * scale) });
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  if (source instanceof Blob) URL.revokeObjectURL(img.src);
+  return canvas;
+}
+
+function scanScreen() {
+  const stage = h('div', { class: 'stack' });
+  let eventName = '';
+  try { eventName = localStorage.getItem('mk_scan_event') || ''; } catch { /* private mode */ }
+  const fileInput = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true, onchange: (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) readPicture({ file });
+  } });
+  const nativeScan = native && native.scanCard;
+
+  const start = () => stage.replaceChildren(
+    h('section', { class: 'glass panel stack' },
+      h('div', { class: 'scan-options' },
+        h('button', { class: 'scan-option', onclick: () => (nativeScan ? native.scanCard('card') : fileInput.click()) },
+          h('span', { class: 'scan-icon' }, icon('camera')), h('strong', {}, 'Business card'), h('small', {}, 'Take a photo; the details are read for you')),
+        h('button', { class: 'scan-option', onclick: () => (nativeScan ? native.scanCard('badge') : fileInput.click()) },
+          h('span', { class: 'scan-icon' }, icon('qr')), h('strong', {}, 'Event badge'), h('small', {}, 'Photograph the badge\'s QR code')),
+        h('button', { class: 'scan-option', onclick: () => review({}, 'manual') },
+          h('span', { class: 'scan-icon' }, icon('type')), h('strong', {}, 'Type it in'), h('small', {}, 'Add someone by hand'))),
+      h('label', { class: 'field' }, h('span', {}, 'Event (optional, kept for your next scans)'),
+        h('input', { class: 'input', value: eventName, maxlength: 80, placeholder: 'e.g. GITEX 2026', oninput: (e) => {
+          eventName = e.target.value;
+          try { localStorage.setItem('mk_scan_event', eventName); } catch { /* private mode */ }
+        } })),
+      h('p', { class: 'small muted' }, 'Photos are only used to read the details and are not kept.')),
+    fileInput);
+
+  async function readPicture({ file, image, text: ocr, qr }) {
+    const preview = h('img', { class: 'scan-preview', alt: 'The photographed card' });
+    stage.replaceChildren(h('section', { class: 'glass panel stack center' }, preview, h('p', { class: 'muted' }, h('span', { class: 'spinner' }), ' Reading the card…')));
+    let canvas = null;
+    try {
+      canvas = await downscale(file || image);
+      preview.src = canvas.toDataURL('image/jpeg', 0.7);
+    } catch (err) {
+      if (!ocr && !qr) { toast(err.message); start(); return; }
+    }
+    const code = qr || (canvas ? await decodeQr(canvas) : '');
+    if (code) {
+      const found = await contactFromQr(code);
+      if (found && (found.name || found.email)) return review(found, 'badge');
+    }
+    try {
+      const { fields } = await api('/scan/read', { method: 'POST', body: { image: canvas ? canvas.toDataURL('image/jpeg', 0.85) : '', text: ocr || '' } });
+      const mobile = fields.phones.find((p) => p.label === 'mobile');
+      const other = fields.phones.find((p) => p !== mobile);
+      review({
+        name: fields.name, title: fields.title, company: fields.company, email: fields.emails[0] || '',
+        phone: other ? other.value : '', mobile: mobile ? mobile.value : '', website: fields.website || fields.linkedin, address: fields.address,
+        note: [fields.department, fields.emails.slice(1).join(', '), fields.ar && fields.ar.name ? `${fields.ar.name} ${fields.ar.title || ''}`.trim() : ''].filter(Boolean).join('\n'),
+      }, 'scan');
+    } catch (err) {
+      toast(err.message);
+      review(Object.assign(ocr ? contactFromText(ocr) : {}, code ? { note: code } : {}), 'scan');
+    }
+  }
+
+  function review(found, source) {
+    const c = { ...found, event: found.event || eventName };
+    const errorLine = h('p', { class: 'error', role: 'alert', hidden: true });
+    const field = (label, key, attrs = {}) => h('label', { class: 'field' }, h('span', {}, label),
+      h(attrs.rows ? 'textarea' : 'input', { class: 'input', value: c[key] || '', dir: 'auto', ...attrs, oninput: (e) => { c[key] = e.target.value; } }));
+    const save = h('button', { class: 'btn primary block', type: 'submit' }, icon('check'), 'Save contact');
+    stage.replaceChildren(h('form', { class: 'glass panel stack', novalidate: true, onsubmit: async (e) => {
+      e.preventDefault();
+      errorLine.hidden = true;
+      save.disabled = true;
+      try {
+        const { contact } = await api('/contacts', { method: 'POST', body: { ...c, source } });
+        if (native && native.haptic) native.haptic('success');
+        done(contact);
+      } catch (err) {
+        errorLine.textContent = err.message;
+        errorLine.hidden = false;
+        save.disabled = false;
+      }
+    } },
+      h('h2', {}, source === 'manual' ? 'New contact' : 'Check the details'),
+      source !== 'manual' && h('p', { class: 'small muted' }, 'Correct anything that was misread before saving.'),
+      h('div', { class: 'grid2' },
+        field('Name', 'name', { autocomplete: 'off', required: true, maxlength: 80 }),
+        field('Job title', 'title', { maxlength: 80 }),
+        field('Company', 'company', { maxlength: 80 }),
+        field('Email', 'email', { type: 'email', maxlength: 120, autocapitalize: 'none' }),
+        field('Mobile', 'mobile', { type: 'tel', maxlength: 40 }),
+        field('Phone', 'phone', { type: 'tel', maxlength: 40 }),
+        field('Website', 'website', { type: 'url', maxlength: 200, autocapitalize: 'none' }),
+        field('Event', 'event', { maxlength: 80 })),
+      field('Address', 'address', { maxlength: 160 }),
+      field('Note', 'note', { rows: 3, maxlength: 400, placeholder: 'What did you talk about?' }),
+      errorLine, save,
+      h('button', { class: 'btn block', type: 'button', onclick: start }, 'Start again')));
+  }
+
+  function done(contact) {
+    stage.replaceChildren(h('section', { class: 'glass panel stack center' },
+      h('span', { class: 'done-icon' }, icon('check')),
+      h('h2', {}, `${contact.name} saved`),
+      h('p', { class: 'muted small' }, crmConnected ? 'Added to your contacts and on its way to Salesforce.' : 'Added to your contacts.'),
+      h('div', { class: 'row wrap center-row' },
+        h('button', { class: 'btn primary', onclick: start }, icon('scan'), 'Scan another'),
+        h('button', { class: 'btn', onclick: () => saveVCard(vcardFromContact(contact), `${contact.name.replace(/[^\w-]+/g, '-')}.vcf`) }, icon('save'), 'Save to phone'),
+        h('a', { class: 'btn', href: '/contacts' }, 'All contacts'))));
+  }
+
+  scanHandler = (result) => readPicture(result);
+  api('/crm').then((st) => { crmConnected = st.connected; }).catch(() => {});
+  start();
+  return h('div', { class: 'stack' },
+    h('header', { class: 'page-head' }, h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, 'Contacts'), h('h1', {}, 'Scan a card'),
+      h('p', { class: 'muted' }, 'Photograph a business card or an event badge. MK Cards reads the details and adds the person to your contacts.'))),
+    stage);
+}
+
+// ---------- email signature ----------
+
+const escHtml = (s) => String(s || '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+function signatureHtml(entry, opts) {
+  const card = entry.card;
+  const t = cardTheme(card);
+  const link = cardUrl(entry);
+  const abs = (path) => (path ? location.origin + path : '');
+  const photo = opts.photo && card.photo ? abs(card.photo) : '';
+  const logoSrc = opts.logo ? abs(card.logo || (me.user.org && me.user.org.logo) || '') : '';
+  const qr = opts.qr ? `${location.origin}/api/public/qr.png?u=${encodeURIComponent(me.user.username)}&s=${encodeURIComponent(entry.slug)}` : '';
+  const font = 'font-family:Arial,Helvetica,sans-serif;';
+  const navy = t.deep;
+  const gold = '#a8862e';
+  const line = (label, value, href) => value ? `<tr><td style="${font}font-size:12px;color:#6b7280;padding:1px 8px 1px 0;white-space:nowrap">${label}</td><td style="${font}font-size:12px;padding:1px 0"><a href="${escHtml(href)}" style="color:${navy};text-decoration:none">${escHtml(value)}</a></td></tr>` : '';
+  const phones = (card.phones || []).slice(0, 2).map((p) => line(p.label === 'mobile' ? 'M' : 'T', p.value, telHref(p.value))).join('');
+  const email = (card.emails || [])[0];
+  const rows = phones + (email ? line('E', email.value, 'mailto:' + email.value) : '') + (card.website ? line('W', prettyUrl(card.website), card.website) : '');
+  const role = [card.title, card.department].filter(Boolean).join(' · ');
+  const nameBlock = `<div style="${font}font-size:${opts.style === 'compact' ? 15 : 17}px;font-weight:bold;color:${navy};line-height:1.3">${escHtml(card.name)}</div>`
+    + (role ? `<div style="${font}font-size:13px;color:#374151;line-height:1.4">${escHtml(role)}</div>` : '')
+    + (card.company ? `<div style="${font}font-size:11px;letter-spacing:1.5px;color:${gold};font-weight:bold;text-transform:uppercase;padding-top:2px">${escHtml(card.company)}</div>` : '');
+  const save = `<a href="${escHtml(link)}" style="${font}font-size:12px;color:${navy};font-weight:bold;text-decoration:none">Save my contact &rsaquo;</a>`;
+  if (opts.style === 'compact') {
+    return `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr><td style="padding:0">${nameBlock}`
+      + `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:6px">${rows}</table>`
+      + `<div style="padding-top:6px">${save}</div></td></tr></table>`;
+  }
+  const left = photo ? `<td style="padding:0 16px 0 0;vertical-align:top"><img src="${escHtml(photo)}" width="84" height="84" alt="${escHtml(card.name)}" style="display:block;width:84px;height:84px;border-radius:42px;border:2px solid ${gold}"></td>` : '';
+  const right = qr ? `<td style="padding:0 0 0 16px;vertical-align:top;border-left:1px solid #e5e7eb"><a href="${escHtml(link)}"><img src="${escHtml(qr)}" width="84" height="84" alt="QR code to save my contact" style="display:block;width:84px;height:84px"></a><div style="${font}font-size:9px;color:#6b7280;text-align:center;padding-top:3px">Scan to save</div></td>` : '';
+  const logoRow = logoSrc ? `<tr><td colspan="3" style="padding-top:10px"><img src="${escHtml(logoSrc)}" height="36" alt="${escHtml(card.company || 'Logo')}" style="display:block;height:36px;width:auto"></td></tr>` : '';
+  return `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse"><tr>${left}`
+    + `<td style="padding:0 ${qr ? 16 : 0}px 0 0;vertical-align:top">${nameBlock}<div style="width:40px;height:2px;background:${gold};margin:8px 0 6px;font-size:0;line-height:0">&nbsp;</div>`
+    + `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">${rows}</table><div style="padding-top:6px">${save}</div></td>${right}</tr>${logoRow}</table>`;
+}
+
+function signaturePlain(entry) {
+  const c = entry.card;
+  return [c.name, [c.title, c.company].filter(Boolean).join(', '), ...(c.phones || []).slice(0, 2).map((p) => p.value),
+    (c.emails || [])[0]?.value, c.website, `Save my contact: ${cardUrl(entry)}`].filter(Boolean).join('\n');
+}
+
+function signatureScreen(id) {
+  const entry = findCard(id);
+  if (!entry) return missingScreen('That card is not in your account.');
+  const card = entry.card;
+  const opts = { style: 'classic', photo: Boolean(card.photo), qr: true, logo: Boolean(card.logo || (me.user.org && me.user.org.logo)) };
+  const preview = h('div', { class: 'sig-preview' });
+  const draw = () => { preview.innerHTML = signatureHtml(entry, opts); };
+  const toggle = (label, key, disabled) => h('label', { class: 'check inline' },
+    h('input', { type: 'checkbox', checked: opts[key], disabled, onchange: (e) => { opts[key] = e.target.checked; draw(); } }), h('span', {}, label));
+  const styles = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Style' },
+    ...[['classic', 'Classic'], ['compact', 'Compact']].map(([value, label]) => h('button', { type: 'button', 'aria-pressed': String(opts.style === value), onclick: (e) => {
+      opts.style = value;
+      styles.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget)));
+      draw();
+    } }, label)));
+  const copyRich = async () => {
+    const html = signatureHtml(entry, opts);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([signaturePlain(entry)], { type: 'text/plain' }) })]);
+      toast('Signature copied. Paste it into your email signature settings.');
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(preview);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ok = document.execCommand('copy');
+      sel.removeAllRanges();
+      toast(ok ? 'Signature copied. Paste it into your email signature settings.' : 'Select the signature above and copy it.');
+    }
+  };
+  const download = () => {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(card.name)} — email signature</title></head><body>${signatureHtml(entry, opts)}</body></html>`;
+    saveBlob(new Blob([html], { type: 'text/html' }), `signature-${me.user.username}${entry.slug ? '-' + entry.slug : ''}.htm`);
+  };
+  draw();
+  const how = [
+    ['Outlook (Windows and Mac)', 'Settings › Mail › Signatures (or File › Options › Mail › Signatures). Make a new signature and paste.'],
+    ['Outlook on the web and new Outlook', 'Settings › Accounts › Signatures. Make a new signature, paste, and save.'],
+    ['Gmail', 'Settings › See all settings › General › Signature › Create new. Paste, then Save changes at the bottom.'],
+    ['Apple Mail on Mac', 'Mail › Settings › Signatures › +. Untick "Always match my default message font", then paste.'],
+    ['iPhone Mail', 'Settings › Apps › Mail › Signature. Paste; the iPhone keeps the text and links.'],
+  ];
+  return h('div', { class: 'stack' },
+    topbar('Email signature', '/'),
+    h('section', { class: 'glass panel stack' },
+      h('div', { class: 'row wrap' }, styles, h('span', { class: 'grow' }),
+        toggle('Photo', 'photo', !card.photo), toggle('QR code', 'qr'), toggle('Logo', 'logo', !(card.logo || (me.user.org && me.user.org.logo)))),
+      preview,
+      h('button', { class: 'btn primary block', onclick: copyRich }, icon('copy'), 'Copy signature'),
+      h('button', { class: 'btn block', onclick: download }, icon('download'), 'Download as a file (.htm)')),
+    h('section', { class: 'glass panel stack' }, h('h2', {}, 'How to add it'),
+      ...how.map(([title, steps]) => h('details', { class: 'how' }, h('summary', {}, title), h('p', { class: 'small muted' }, steps)))));
+}
+
+function saveBlob(blob, filename) {
+  if (native && native.saveFile) {
+    const reader = new FileReader();
+    reader.onload = () => native.saveFile(String(reader.result).split(',')[1], filename, blob.type);
+    reader.readAsDataURL(blob);
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// ---------- video-call background ----------
+
+function backgroundScreen(id) {
+  const entry = findCard(id);
+  if (!entry) return missingScreen('That card is not in your account.');
+  const card = entry.card;
+  const opts = { theme: 'dark', side: 'left', qr: true, details: true, logo: Boolean(card.logo || (me.user.org && me.user.org.logo)) };
+  const holder = h('div', { class: 'bg-preview' });
+  let canvas = null;
+  let logoImg = null;
+  const draw = async () => {
+    if (opts.logo && !logoImg) logoImg = await loadImage(card.logo || me.user.org.logo).catch(() => null);
+    canvas = await drawCallBackground(card, cardUrl(entry), { theme: opts.theme, side: opts.side, details: opts.details,
+      qr: opts.qr ? qrMatrix(cardUrl(entry)) : null, logo: opts.logo ? logoImg : null });
+    canvas.setAttribute('aria-label', 'Background preview');
+    holder.replaceChildren(canvas);
+  };
+  const seg = (label, key, choices) => {
+    const group = h('div', { class: 'segmented', role: 'group', 'aria-label': label },
+      ...choices.map(([value, text]) => h('button', { type: 'button', 'aria-pressed': String(opts[key] === value), onclick: (e) => {
+        opts[key] = value;
+        group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget)));
+        draw();
+      } }, text)));
+    return group;
+  };
+  const toggle = (label, key, disabled) => h('label', { class: 'check inline' },
+    h('input', { type: 'checkbox', checked: opts[key], disabled, onchange: (e) => { opts[key] = e.target.checked; draw(); } }), h('span', {}, label));
+  draw();
+  return h('div', { class: 'stack' },
+    topbar('Video-call background', '/'),
+    h('section', { class: 'glass panel stack' },
+      holder,
+      h('div', { class: 'row wrap' }, seg('Theme', 'theme', [['dark', 'Dark'], ['light', 'Light']]), seg('Name on the', 'side', [['left', 'Left'], ['right', 'Right']])),
+      h('div', { class: 'row wrap' }, toggle('QR code', 'qr'), toggle('Email and phone', 'details'), toggle('Logo', 'logo', !(card.logo || (me.user.org && me.user.org.logo)))),
+      h('button', { class: 'btn primary block', onclick: () => canvas && canvas.toBlob((blob) => saveBlob(blob, `background-${me.user.username}${entry.slug ? '-' + entry.slug : ''}.jpg`), 'image/jpeg', 0.92) },
+        icon('download'), 'Download (1920 × 1080)')),
+    h('section', { class: 'glass panel stack' }, h('h2', {}, 'How to use it'),
+      h('p', { class: 'small muted' }, 'Zoom: Settings › Backgrounds & effects › + › Add image. Teams: before or during a meeting, Effects › Backgrounds › Add new. Google Meet: Apply visual effects › Backgrounds › Upload. Webex: Change virtual background › +.'),
+      h('p', { class: 'small muted' }, 'Your own preview may look mirrored; the people in the call see the text the right way round.')));
+}
+
+// The iPhone app hands back scans made with its own camera.
+window.MKCards = window.MKCards || {};
+window.MKCards.scanned = (result) => {
+  if (location.pathname !== '/scan') go('/scan');
+  if (scanHandler) scanHandler(result);
+};
+
 // ---------- router ----------
+
+const safePath = (p) => (typeof p === 'string' && /^\/(?!\/)/.test(p) ? p : '/');
 
 // [pattern, screen, tab, who]: who is 'user' (must be logged in), 'guest' (logged out only) or null (anyone).
 const routes = [
@@ -1645,6 +2308,10 @@ const routes = [
   [/^\/account$/, settingsScreen, 'account', 'user'],
   [/^\/settings$/, settingsScreen, 'account', 'user'],
   [/^\/admin$/, adminScreen, 'admin', 'user'],
+  [/^\/contacts$/, contactsScreen, 'contacts', 'user'],
+  [/^\/scan$/, scanScreen, 'contacts', 'user'],
+  [/^\/signature\/([a-z0-9]+)$/, signatureScreen, 'home', 'user'],
+  [/^\/background\/([a-z0-9]+)$/, backgroundScreen, 'home', 'user'],
   [/^\/welcome-password$/, setPasswordScreen, null, 'user'],
   [/^\/([a-z0-9][a-z0-9_-]{2,29})(?:\/([a-z0-9][a-z0-9-]{0,29}))?$/, publicScreen, null, null],
 ];
@@ -1678,15 +2345,17 @@ function render() {
   }
   app.replaceChildren(screen);
   // The top navigation is for people who are logged in; card pages and visitors get a clean page.
-  document.body.classList.toggle('wide', tab === 'home' || tab === 'admin');
-  tabbar.hidden = !me.user || tab === null;
+  document.body.classList.toggle('wide', tab === 'home' || tab === 'admin' || tab === 'contacts');
+  document.body.classList.toggle('in-app', inAppTabs);
+  tabbar.hidden = !me.user || tab === null || inAppTabs;
+  flashFromUrl();
   if (me.user) {
     const main = me.cards.find((c) => c.slug === '') || me.cards[0];
     const adminLabel = me.user.org && me.user.org.role !== 'member' ? 'Admin' : 'Company';
     tabbar.replaceChildren(h('nav', { class: 'topnav-inner glass', 'aria-label': 'Main' },
       h('a', { class: 'brand', href: '/' }, logo(), h('span', {}, 'MK Cards')),
       h('div', { class: 'topnav-links' },
-        ...[['home', '/', 'My cards'], ['account', '/account', 'Account'], ['admin', '/admin', adminLabel]]
+        ...[['home', '/', 'My cards'], ['contacts', '/contacts', 'Contacts'], ['account', '/account', 'Account'], ['admin', '/admin', adminLabel]]
           .map(([name, href, label]) => h('a', { href, 'aria-current': tab === name || (name === 'home' && tab === 'new') ? 'page' : null }, label))),
       h('a', { class: 'topnav-avatar', href: '/account', title: me.user.username, 'aria-label': 'Account' }, initials(main ? main.card.name : me.user.username))));
   }
@@ -1769,14 +2438,17 @@ async function checkForUpdate() {
 }
 
 // Android app: Google Play reports that a newer release is available or downloaded.
-window.MKCards = {
+Object.assign(window.MKCards, {
   nativeUpdate(state) {
     if (state === 'available') offerUpdate('An update for MK Cards is available.', 'Update', () => native.startUpdate());
     else if (state === 'downloaded') offerUpdate('The update is downloaded.', 'Restart', () => native.completeUpdate());
     else if (state === 'current') toast('MK Cards is up to date.');
     else if (state === 'unknown') toast('Could not check for updates right now.');
   },
-};
+  // The iPhone app's tab bar moves between pages without reloading.
+  open(path) { go(safePath(path)); },
+  reload: () => boot(),
+});
 
 boot();
 watchServiceWorker();

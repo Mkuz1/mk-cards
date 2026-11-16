@@ -195,3 +195,34 @@ printed or wallet QR code save the contact without visiting the page, so they ca
   Contacts, share sheet) help; native extras such as NFC tag writing or a home-screen widget would help more.
 - Store listings need: the final privacy policy, a demo account for Apple's reviewers, and Google Play's
   data-safety form (the app has in-app account deletion).
+
+## Sales tools (v2.3)
+
+- **Contacts** (`/contacts`): everyone who shared their details on a card page, plus scanned cards and badges.
+  Export as CSV, save to the phone, or send to Salesforce.
+- **Scanning** (`/scan`): photograph a business card (read by Cloudflare Workers AI, binding `AI`; the photo is not
+  kept) or an event badge's QR code (vCard, MECARD or an MK Cards link). The iPhone app uses Apple's document camera.
+- **Salesforce**: Admin page (companies) or Contacts page (individuals) › Salesforce. Each customer creates an External
+  Client App in their Salesforce (callback `https://mkcards.pages.dev/api/crm/salesforce/callback`, scopes `api` and
+  `refresh_token`, PKCE) and pastes its consumer key and secret. Contacts become Leads (Lead Source "MK Cards"),
+  owned by the card holder when their email matches a Salesforce user. Tokens are encrypted with the `TOKEN_KEY` secret.
+  To offer one-click connect without customers making an app, set Worker secrets `SALESFORCE_CLIENT_ID` and
+  `SALESFORCE_CLIENT_SECRET` from an app in your own Salesforce org.
+- **Email signatures** (`/signature/<card>`) and **video-call backgrounds** (`/background/<card>`, 1920×1080).
+
+## Company sign-in (Microsoft and Google)
+
+The buttons appear once these Worker secrets are set (Cloudflare dashboard › Workers › mkcards › Settings › Variables):
+
+- Microsoft: register an app at https://entra.microsoft.com › App registrations › New registration. Account type:
+  "Accounts in any organizational directory (multitenant)". Redirect URI (Web):
+  `https://mkcards.pages.dev/api/auth/sso/microsoft/callback`. Create a client secret. Set `MICROSOFT_CLIENT_ID`
+  (Application ID) and `MICROSOFT_CLIENT_SECRET`.
+- Google: https://console.cloud.google.com › APIs & Services › Credentials › Create OAuth client ID › Web application.
+  Redirect URI `https://mkcards.pages.dev/api/auth/sso/google/callback`. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+  Publish the consent screen (scopes: openid, email, profile).
+- Apple (iPhone app): nothing to set on the server; the token's audience is the bundle ID `app.mkcards`.
+
+A company admin connects their tenant/domain on the Admin page by signing in once with a work account, then can add
+people automatically and require company sign-in. People can also connect Microsoft/Google to their own account
+from the Account page.

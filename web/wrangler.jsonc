@@ -8,5 +8,7 @@
   "build": { "command": "node scripts/build-assets.mjs" },
   // The database: a SQLite-backed Durable Object that lives inside this Worker.
   "durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
+  // Workers AI reads photographed business cards and badges.
+  "ai": { "binding": "AI" }
 }

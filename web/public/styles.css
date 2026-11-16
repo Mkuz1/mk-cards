@@ -437,3 +437,80 @@ body.wide #app { max-width: 1120px; }
 .linkbox.big { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; font-family: ui-monospace, Menlo, monospace; }
 
 .logo-preview { width: 46px; height: 46px; object-fit: contain; border-radius: 10px; background: #fff; border: 1px solid var(--hairline); padding: 4px; }
+
+/* ---------- sign-in with Microsoft / Google / Apple ---------- */
+.sso-block { display: grid; gap: 10px; margin-top: 4px; }
+.divider { display: flex; align-items: center; gap: 12px; color: var(--ink-3); font-size: 13px; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
+.sso-btn { background: #fff; justify-content: center; }
+.sso-glyph { display: inline-grid; place-items: center; width: 22px; height: 22px; flex: none; }
+.sso-glyph svg { width: 20px; height: 20px; }
+.sso-glyph.key { color: var(--ink-2); }
+.signin-row { padding: 6px 0; border-top: 1px solid var(--hairline); }
+.signin-row strong { font-weight: 650; }
+.block { display: block; }
+.check { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.check input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+.check.inline { align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.check.inline input { margin: 0; }
+.panel-icon { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--accent); color: #fff; flex: none; }
+.panel-icon svg { width: 20px; height: 20px; }
+.panel-icon.sf { background: linear-gradient(180deg, #1798c1, #0b6fa4); }
+.pill.ok { color: #18794e; background: #e7f6ee; border-color: #bfe5cf; }
+.pill svg { width: 14px; height: 14px; }
+.two-col { display: grid; gap: 16px; }
+@media (min-width: 860px) { .two-col { grid-template-columns: 1fr 1fr; align-items: start; } }
+details.own-app summary, details.how summary { cursor: pointer; font-weight: 620; padding: 4px 0; }
+details.own-app[open] summary { margin-bottom: 10px; }
+details.how { border-top: 1px solid var(--hairline); padding-top: 8px; }
+details.how p { margin-top: 6px; }
+
+/* ---------- contacts ---------- */
+.contacts-layout { display: grid; gap: 16px; }
+@media (min-width: 900px) { .contacts-layout { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; } }
+.contact-list { display: grid; }
+.contact { display: flex; gap: 14px; align-items: flex-start; padding: 16px 0; border-top: 1px solid var(--hairline); }
+.contact:first-child { border-top: 0; }
+.contact .who { font-weight: 650; font-size: 17px; overflow-wrap: anywhere; }
+.contact p + p { margin-top: 2px; }
+.contact .links { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.contact .links a { text-decoration: none; overflow-wrap: anywhere; }
+.contact .note { white-space: pre-line; }
+.contact .crm-status { display: block; margin-top: 8px; }
+.contact-avatar { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; background: linear-gradient(180deg, var(--primary-top), var(--primary-bottom)); color: #fff; font-weight: 700; font-size: 15px; font-family: var(--serif); }
+.contact-actions { display: flex; gap: 6px; }
+.empty { padding: 24px 8px; display: grid; gap: 8px; justify-items: center; }
+.empty .strong, .strong { font-weight: 650; }
+.empty-icon, .done-icon { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--field); border: 1px solid var(--hairline); color: var(--accent); margin: 0 auto; }
+.done-icon { background: #e7f6ee; color: #18794e; border-color: #bfe5cf; }
+.empty-icon svg, .done-icon svg { width: 26px; height: 26px; }
+.center-row { justify-content: center; }
+
+/* ---------- scanning ---------- */
+.scan-options { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.scan-option { display: grid; justify-items: center; gap: 6px; text-align: center; padding: 20px 14px; border-radius: 20px; border: 1px solid var(--hairline); background: var(--glass-strong); cursor: pointer; transition: transform 0.12s; }
+.scan-option:active { transform: scale(0.98); }
+.scan-option strong { font-size: 16px; }
+.scan-option small { color: var(--ink-3); font-size: 13px; }
+.scan-icon { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: linear-gradient(180deg, var(--primary-top), var(--primary-bottom)); color: #fff; }
+.scan-icon svg { width: 26px; height: 26px; }
+.scan-preview { max-width: 100%; max-height: 260px; border-radius: 16px; margin: 0 auto; box-shadow: var(--shadow); }
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--hairline); border-top-color: var(--accent); border-radius: 50%; vertical-align: -3px; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.grid2 { display: grid; gap: 14px; }
+@media (min-width: 520px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+
+/* ---------- signature and background ---------- */
+.segmented { display: inline-flex; padding: 3px; border-radius: 12px; background: var(--field); border: 1px solid var(--hairline); }
+.segmented button { border: 0; background: none; padding: 7px 14px; border-radius: 9px; font-weight: 620; font-size: 14px; color: var(--ink-2); cursor: pointer; }
+.segmented button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(13, 27, 51, 0.16); }
+.sig-preview { background: #fff; color: #111; border-radius: 16px; border: 1px solid var(--hairline); padding: 22px; overflow-x: auto; }
+.bg-preview canvas { width: 100%; height: auto; display: block; border-radius: 14px; box-shadow: var(--shadow); }
+
+/* Inside the iPhone app: the app's own tab bar replaces the page's top navigation. */
+body.in-app #app { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+.page-head > .grow { flex-basis: 280px; }
+@media (max-width: 520px) {
+  .topnav-links { margin-left: 2px; }
+  .topnav-links a { padding: 8px 10px; font-size: 14px; }
+}
