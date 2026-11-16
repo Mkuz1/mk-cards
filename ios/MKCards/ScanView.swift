@@ -227,7 +227,7 @@ enum QRContact {
     }
 
     private static func unescape(_ s: Substring) -> String {
-        String(s).replacingOccurrences(of: "\\n", with: "\n").replacingOccurrences(of: "\\,", with: ",").replacingOccurrences(of: "\;", with: ";")
+        String(s).replacingOccurrences(of: "\\n", with: "\n").replacingOccurrences(of: "\\,", with: ",").replacingOccurrences(of: "\\;", with: ";")
             .trimmingCharacters(in: .whitespaces)
     }
 
