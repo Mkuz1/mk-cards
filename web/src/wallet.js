@@ -63,6 +63,7 @@ export function passColours(card) {
   return { background: bg, label, hex: toHex(bg) };
 }
 
+const waLink = (card) => `https://wa.me/${card.whatsapp.replace(/\D/g, '')}${card.whatsappMessage ? '?text=' + encodeURIComponent(card.whatsappMessage) : ''}`;
 const rgb = (c) => `rgb(${c.join(',')})`;
 const asset = (path) => Uint8Array.from(atob(ASSETS[path].base64), (ch) => ch.charCodeAt(0));
 
@@ -98,8 +99,8 @@ export async function applePass(env, { cardId, card, link }) {
     card.company && field('company', 'COMPANY', [card.company, card.department].filter(Boolean).join(' · ')),
     ...phones.map((p, i) => field(`phone${i}`, phoneLabel(p), p.value)),
     ...emails.map((e, i) => field(`email${i}`, e.label === 'personal' ? 'PERSONAL EMAIL' : 'EMAIL', e.value)),
-    card.whatsapp && field('whatsapp', 'WHATSAPP', `https://wa.me/${card.whatsapp.replace(/\D/g, '')}`,
-      { attributedValue: `<a href="https://wa.me/${card.whatsapp.replace(/\D/g, '')}">${card.whatsapp}</a>` }),
+    card.whatsapp && field('whatsapp', 'WHATSAPP', waLink(card),
+      { attributedValue: `<a href="${waLink(card)}">${card.whatsapp}</a>` }),
     card.website && field('web', 'WEBSITE', card.website),
     ...(card.links || []).map((l, i) => field(`link${i}`, (l.label || l.type).toUpperCase(), l.url)),
     card.address && field('address', 'ADDRESS', card.address),
@@ -200,7 +201,7 @@ function googleObject(issuer, { cardId, card, link }) {
   const uris = [
     ...phones.map((p, i) => ({ id: `tel${i}`, uri: `tel:${p.value.replace(/[^\d+]/g, '')}`, description: `Call ${p.value}` })),
     ...emails.map((e, i) => ({ id: `mail${i}`, uri: `mailto:${e.value}`, description: `Email ${e.value}` })),
-    card.whatsapp && { id: 'whatsapp', uri: `https://wa.me/${card.whatsapp.replace(/\D/g, '')}`, description: 'Chat on WhatsApp' },
+    card.whatsapp && { id: 'whatsapp', uri: waLink(card), description: 'Chat on WhatsApp' },
     card.website && { id: 'web', uri: card.website, description: 'Website' },
     { id: 'page', uri: link, description: 'My card' },
   ].filter(Boolean);

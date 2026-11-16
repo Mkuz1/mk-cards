@@ -1,45 +1,26 @@
-/* MK Cards — glass interface. Light and dark follow the system setting. */
+/* MK Cards — one formal look everywhere: deep midnight navy, frosted glass and gold, as on the cards and the app icon. */
 :root {
-  --bg: #e9eefb;
-  --ink: #0d1326;
-  --ink-2: #4a5470;
-  --ink-3: #566079; /* darker so small labels stay readable over the coloured background */
-  --glass: rgba(255, 255, 255, 0.52);
-  --glass-strong: rgba(255, 255, 255, 0.74);
-  --glass-edge: rgba(255, 255, 255, 0.78);
-  --glass-edge-low: rgba(255, 255, 255, 0.18);
-  --hairline: rgba(13, 19, 38, 0.1);
-  --field: rgba(255, 255, 255, 0.58);
-  --shadow: 0 18px 50px -18px rgba(28, 44, 92, 0.38), 0 2px 8px rgba(28, 44, 92, 0.08);
-  --blob-1: #9db8ff;
-  --blob-2: #ffc3e4;
-  --blob-3: #a8f0e0;
-  --accent: #3d6bff;
-  --danger: #d6334c;
+  --bg: #0b1c38;
+  --ink: #f4f6fb;
+  --ink-2: #c3cbe0;
+  --ink-3: #9aa7c3;
+  --glass: rgba(255, 255, 255, 0.07);
+  --glass-strong: rgba(255, 255, 255, 0.12);
+  --glass-edge: rgba(255, 255, 255, 0.3);
+  --glass-edge-low: rgba(255, 255, 255, 0.12);
+  --hairline: rgba(255, 255, 255, 0.14);
+  --field: rgba(255, 255, 255, 0.07);
+  --shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.75), 0 2px 8px rgba(0, 0, 0, 0.2);
+  --accent: #d5b757;
+  --gold-top: #e4cc7c;
+  --gold-bottom: #bf9f3e;
+  --gold-ink: #1d1704;
+  --danger: #ff8394;
+  --sheet: #13294b;
   --radius: 28px;
-  --font: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0f1c;
-    --ink: #f3f5fd;
-    --ink-2: #b4bcd6;
-    --ink-3: #8089a6;
-    --glass: rgba(34, 42, 68, 0.5);
-    --glass-strong: rgba(40, 49, 80, 0.74);
-    --glass-edge: rgba(255, 255, 255, 0.22);
-    --glass-edge-low: rgba(255, 255, 255, 0.05);
-    --hairline: rgba(255, 255, 255, 0.12);
-    --field: rgba(255, 255, 255, 0.08);
-    --shadow: 0 22px 60px -20px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.3);
-    --blob-1: #2c49b8;
-    --blob-2: #8a2f72;
-    --blob-3: #17705f;
-    --accent: #7c9dff;
-    --danger: #ff7087;
-  }
+  --font: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Arabic", sans-serif;
+  --serif: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Georgia, "Noto Naskh Arabic", "Times New Roman", serif;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -54,21 +35,20 @@ body {
   overflow-x: hidden;
 }
 h1, h2, h3, p { margin: 0; }
-h1 { font-size: 30px; line-height: 1.15; letter-spacing: -0.02em; font-weight: 750; text-wrap: balance; }
-h2 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 650; }
+h1 { font-family: var(--serif); font-size: 31px; line-height: 1.15; letter-spacing: -0.005em; font-weight: 700; text-wrap: balance; }
+h2 { font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); font-weight: 650; }
 a { color: var(--accent); }
 button, input, select, textarea { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Soft colour field behind the glass: plain gradients, so it stays cheap to paint on any phone. */
+/* Midnight backdrop with a misty glow in the top-left corner (plain gradients, cheap to paint on any phone). */
 .backdrop {
   position: fixed; inset: 0; z-index: -1;
   background:
-    radial-gradient(60vmax 60vmax at 0% 0%, var(--blob-1) 0%, transparent 70%),
-    radial-gradient(52vmax 52vmax at 100% 34%, var(--blob-2) 0%, transparent 70%),
-    radial-gradient(58vmax 58vmax at 34% 100%, var(--blob-3) 0%, transparent 70%),
-    var(--bg);
+    radial-gradient(80vmax 55vmax at 0% 0%, rgba(156, 175, 187, 0.34) 0%, transparent 60%),
+    radial-gradient(70vmax 60vmax at 100% 85%, rgba(42, 91, 168, 0.3) 0%, transparent 65%),
+    linear-gradient(180deg, #0f2343, #0a1a33);
 }
 .backdrop i { display: none; }
 
@@ -118,9 +98,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn:hover { filter: brightness(1.06); }
 .btn:active { transform: scale(0.97); }
 .btn.primary {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white), var(--accent));
-  color: #fff; border-color: transparent;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 10px 24px -10px var(--accent);
+  background: linear-gradient(180deg, var(--gold-top), var(--gold-bottom));
+  color: var(--gold-ink); border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 10px 24px -12px rgba(213, 183, 87, 0.7);
 }
 .btn.danger { color: var(--danger); }
 .btn.block { width: 100%; }
@@ -141,7 +121,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tabbar a svg { width: 22px; height: 22px; }
 .tabbar a[aria-current="page"] {
   color: var(--accent); background: var(--glass-strong);
-  box-shadow: inset 0 1px 0 var(--glass-edge), 0 4px 12px -8px rgba(20, 30, 70, 0.5);
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 4px 12px -8px rgba(0, 0, 0, 0.6);
 }
 
 /* ---------- The card ---------- */
@@ -312,8 +292,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 32px
 .hero p { margin: 10px auto 22px; max-width: 34ch; color: var(--ink-2); text-wrap: pretty; }
 
 /* Bottom sheet */
-.scrim { position: fixed; inset: 0; z-index: 40; background: rgba(8, 12, 28, 0.34); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.2s ease; }
-.sheet { width: min(100%, 560px); max-height: 92dvh; overflow: auto; border-radius: 32px 32px 0 0; padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); background: var(--glass-strong); animation: rise 0.28s cubic-bezier(0.2, 0.9, 0.3, 1); }
+.scrim { position: fixed; inset: 0; z-index: 40; background: rgba(3, 8, 20, 0.55); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.2s ease; }
+.sheet { width: min(100%, 560px); max-height: 92dvh; overflow: auto; border-radius: 32px 32px 0 0; padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); background: var(--sheet); border: 1px solid var(--glass-edge-low); animation: rise 0.28s cubic-bezier(0.2, 0.9, 0.3, 1); }
 @media (min-width: 620px) { .scrim { align-items: center; } .sheet { border-radius: 32px; } }
 
 /* Toasts, including the "update available" notice */
@@ -327,5 +307,17 @@ input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 32px
 @keyframes drop { from { transform: translateY(-16px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass, .btn, .sheet, .toast { background: var(--bg); }
+  .glass, .btn, .toast { background: #15294a; }
 }
+
+/* Card page extras: language switch, the QR sheet, and the editor's preview switch. */
+.vc-lang { display: flex; justify-content: flex-end; }
+.vc-pill.small { min-height: 38px; padding: 0 16px; font-size: 15px; }
+.vc-pill[lang="ar"], .vc[lang="ar"] { font-family: "SF Arabic", "Geeza Pro", "Noto Sans Arabic", var(--font); }
+.vc[lang="ar"] .vc-name { font-family: "SF Arabic", "Geeza Pro", "Noto Naskh Arabic", var(--serif); }
+.vc[lang="ar"] .vc-eyebrow { letter-spacing: 0; font-size: 14px; }
+.qr-sheet { text-align: center; display: grid; gap: 10px; justify-items: center; }
+.qr-sheet h1 { font-size: 24px; }
+.qr-sheet-title { color: var(--accent); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 650; }
+.qr-sheet .qr { width: min(100%, 300px); }
+.preview-lang { max-width: 260px; margin: 0 auto; }

@@ -104,7 +104,7 @@ const LINK_TYPES = new Set([
 ]);
 const STYLES = new Set(['aurora', 'solid', 'mono']);
 const ENTRY_LABELS = new Set(['mobile', 'work', 'home', 'personal', 'other']);
-const MAX_ENTRIES = 6; // phones or emails per card
+const MAX_ENTRIES = 10; // phones or emails per card
 
 export default {
   async fetch(request, env) {
@@ -667,7 +667,7 @@ async function publicVCard(env, url) {
   const row = await findCard(env, url.searchParams.get('u'), url.searchParams.get('s'));
   if (!row) throw new HttpError(404, 'Card not found.');
   const link = `${url.origin}/${row.username}${row.slug ? '/' + row.slug : ''}`;
-  const card = readCard(row.data);
+  const card = inLanguage(readCard(row.data), url.searchParams.get('lang'));
   const photo = await mediaBytes(env, card.photo);
   return new Response(buildVCard(card, link, photo), {
     headers: {
@@ -827,12 +827,15 @@ function cleanCard(input) {
     phones: cleanEntries(input.phones, input.phone, 40),
     emails: cleanEntries(input.emails, input.email, 120),
     whatsapp: text(input.whatsapp, 40),
+    whatsappMessage: text(input.whatsappMessage, 300),
     website: safeUrl(input.website),
     address: text(input.address, 160),
     photo: '',
-    accent: /^#[0-9a-f]{6}$/i.test(input.accent || '') ? input.accent.toLowerCase() : '#5b8cff',
+    accent: /^#[0-9a-f]{6}$/i.test(input.accent || '') ? input.accent.toLowerCase() : '#2a5ba8',
     style: STYLES.has(input.style) ? input.style : 'aurora',
     links: [],
+    // The Arabic version of the card's words, shown when a visitor switches the page to العربية.
+    ar: cleanArabic(input.ar),
   };
   if (!card.name) throw new HttpError(400, 'A card needs a name.');
   if (card.whatsapp) {
@@ -858,6 +861,22 @@ function cleanCard(input) {
   return card;
 }
 
+const AR_FIELDS = { name: 80, title: 80, department: 80, company: 80, bio: 400, address: 160 };
+
+function cleanArabic(input) {
+  const out = {};
+  for (const [key, max] of Object.entries(AR_FIELDS)) {
+    const value = text(input && input[key], max);
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
+/** The card as shown in a language: Arabic words where the owner wrote them, the main ones otherwise. */
+export function inLanguage(card, lang) {
+  return lang === 'ar' && card.ar && card.ar.name ? { ...card, ...card.ar } : card;
+}
+
 // Phones and emails are lists of { label, value }. A single legacy value is accepted too.
 function cleanEntries(list, legacy, max) {
   const source = Array.isArray(list) ? list : legacy ? [{ label: '', value: legacy }] : [];
@@ -878,6 +897,8 @@ function upgradeCard(card) {
   if (typeof card.label !== 'string') card.label = '';
   if (typeof card.whatsapp !== 'string') card.whatsapp = '';
   if (typeof card.department !== 'string') card.department = '';
+  if (typeof card.whatsappMessage !== 'string') card.whatsappMessage = '';
+  if (!card.ar || typeof card.ar !== 'object') card.ar = {};
   return card;
 }
 

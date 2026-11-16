@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '1.9.1'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.0.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -133,7 +133,7 @@ const LINK_TYPES = {
 
 const PHONE_LABELS = { mobile: 'Mobile', work: 'Work', home: 'Home', other: 'Other' };
 const EMAIL_LABELS = { work: 'Work', personal: 'Personal', other: 'Other' };
-const MAX_ENTRIES = 6; // phones or emails per card
+const MAX_ENTRIES = 10; // phones or emails per card
 const MAX_CARDS = 10;
 
 const slugify = (value) =>
@@ -158,10 +158,46 @@ function themeVars(card) {
   ].join(';');
 }
 
-const phoneLabel = (p) => ({ mobile: 'Mobile', work: 'Office', home: 'Home' })[p.label] || 'Phone';
-const emailLabel = (e) => ({ work: 'Work', personal: 'Personal' })[e.label] || 'Email';
+// The words on a card, in English and Arabic.
+const CARD_WORDS = {
+  en: {
+    save: 'Save contact', whatsapp: 'WhatsApp', email: 'Email', call: 'Call', mobile: 'Mobile', office: 'Office',
+    home: 'Home', phone: 'Phone', work: 'Work', personal: 'Personal', website: 'Website', address: 'Address',
+    share: 'Share', qr: 'QR code', send: 'Send my details', scan: 'Scan to save contact',
+    scanNote: 'Point a phone camera at the code. It offers to add this contact straight away.', close: 'Close',
+    other: 'العربية', hereIs: 'Here is my card',
+  },
+  ar: {
+    save: 'حفظ جهة الاتصال', whatsapp: 'واتساب', email: 'البريد', call: 'اتصال', mobile: 'الجوال', office: 'المكتب',
+    home: 'المنزل', phone: 'الهاتف', work: 'العمل', personal: 'شخصي', website: 'الموقع الإلكتروني', address: 'العنوان',
+    share: 'مشاركة', qr: 'رمز QR', send: 'أرسل بياناتي', scan: 'امسح لحفظ جهة الاتصال',
+    scanNote: 'وجّه كاميرا الهاتف إلى الرمز لإضافة جهة الاتصال مباشرةً.', close: 'إغلاق',
+    other: 'English', hereIs: 'هذه بطاقتي',
+  },
+};
+const hasArabic = (card) => Boolean(card.ar && card.ar.name);
+/** The card in a language: the Arabic words where the owner wrote them, the main ones otherwise. */
+const inLanguage = (card, lang) => (lang === 'ar' && hasArabic(card) ? { ...card, ...card.ar } : card);
+
+const phoneLabel = (p, w = CARD_WORDS.en) => ({ mobile: w.mobile, work: w.office, home: w.home })[p.label] || w.phone;
+const emailLabel = (e, w = CARD_WORDS.en) => ({ work: w.work, personal: w.personal })[e.label] || w.email;
 const telHref = (v) => 'tel:' + v.replace(/[^\d+]/g, '');
-const waHref = (v) => 'https://wa.me/' + v.replace(/\D/g, '');
+const waHref = (v, message) => 'https://wa.me/' + v.replace(/\D/g, '') + (message ? '?text=' + encodeURIComponent(message) : '');
+
+/** A compact vCard for the page's QR code: scanning it with any phone camera offers "Add contact". */
+function qrVCard(card, link) {
+  const esc = (v) => String(v || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1');
+  const parts = (card.name || '').trim().split(/\s+/);
+  const family = parts.length > 1 ? parts.pop() : '';
+  const lines = ['BEGIN:VCARD', 'VERSION:3.0', `N:${esc(family)};${esc(parts.join(' '))};;;`, `FN:${esc(card.name)}`];
+  if (card.company || card.department) lines.push(`ORG:${esc(card.company)}${card.department ? ';' + esc(card.department) : ''}`);
+  if (card.title) lines.push(`TITLE:${esc(card.title)}`);
+  const tel = { mobile: 'CELL', work: 'WORK', home: 'HOME' };
+  for (const p of (card.phones || []).filter((x) => x.value).slice(0, 3)) lines.push(`TEL;TYPE=${tel[p.label] || 'VOICE'}:${esc(p.value)}`);
+  for (const e of (card.emails || []).filter((x) => x.value).slice(0, 3)) lines.push(`EMAIL:${esc(e.value)}`);
+  lines.push(`URL:${esc(link)}`, 'END:VCARD');
+  return lines.join('\r\n');
+}
 
 function avatarOf(card, cls) {
   return card.photo
@@ -171,9 +207,12 @@ function avatarOf(card, cls) {
 
 /**
  * Draws a card. `actions.save` is called by the "Save contact" button on the public page; without it (in the
- * editor preview) the quick buttons are shown for looks only.
+ * editor preview) the quick buttons are shown for looks only. `lang` 'ar' shows the Arabic version, right to left.
  */
-function renderCard(card, { compact = false, actions = null } = {}) {
+function renderCard(source, { compact = false, actions = null, lang = 'en' } = {}) {
+  const card = inLanguage(source, lang);
+  const w = CARD_WORDS[lang] || CARD_WORDS.en;
+  const dir = lang === 'ar' ? 'rtl' : 'ltr';
   if (compact) {
     const role = [card.title, card.company].filter(Boolean).join(' · ');
     return h('article', { class: `vc-mini ${card.style || 'aurora'}`, style: themeVars(card) },
@@ -191,11 +230,12 @@ function renderCard(card, { compact = false, actions = null } = {}) {
     target: href && /^https?:/.test(href) ? '_blank' : null, rel: 'noopener', tabindex: live ? null : '-1',
     onclick: extra.onclick || null,
   }, solidIcon(iconName), h('span', {}, label));
+  const wa = card.whatsapp && waHref(card.whatsapp, card.whatsappMessage);
   const quick = [
-    tile('save', 'Save contact', null, { primary: true, onclick: live ? actions.save : null }),
-    card.whatsapp && tile('whatsapp', 'WhatsApp', waHref(card.whatsapp)),
-    emails[0] && tile('mail', 'Email', 'mailto:' + emails[0].value),
-    phones[0] && tile('phone', 'Call', telHref(phones[0].value)),
+    tile('save', w.save, null, { primary: true, onclick: live ? actions.save : null }),
+    wa && tile('whatsapp', w.whatsapp, wa),
+    emails[0] && tile('mail', w.email, 'mailto:' + emails[0].value),
+    phones[0] && tile('phone', w.call, telHref(phones[0].value)),
   ].filter(Boolean);
 
   const orgLine = card.department ? [card.department, card.company].filter(Boolean).join(' · ') : '';
@@ -215,15 +255,15 @@ function renderCard(card, { compact = false, actions = null } = {}) {
   h('span', { class: 'grow' }, h('small', {}, label), h('bdi', { class: value.length > 24 ? 'long' : null }, value)),
   href ? h('span', { class: 'vc-chev' }, icon('chevron')) : null);
   const groups = [
-    phones.map((p) => row('phone', phoneLabel(p), p.value, telHref(p.value))),
-    card.whatsapp ? [row('whatsapp', 'WhatsApp', card.whatsapp, waHref(card.whatsapp))] : [],
-    emails.map((e) => row('mail', emailLabel(e), e.value, 'mailto:' + e.value)),
-    [card.website && row('globe', 'Website', prettyUrl(card.website), card.website),
+    phones.map((p) => row('phone', phoneLabel(p, w), p.value, telHref(p.value))),
+    wa ? [row('whatsapp', w.whatsapp, card.whatsapp, wa)] : [],
+    emails.map((e) => row('mail', emailLabel(e, w), e.value, 'mailto:' + e.value)),
+    [card.website && row('globe', w.website, prettyUrl(card.website), card.website),
       ...(card.links || []).filter((l) => l.url).map((l) => row('link', l.label || LINK_TYPES[l.type] || 'Link', prettyUrl(l.url), l.url))].filter(Boolean),
-    card.address ? [row('pin', 'Address', card.address, 'https://maps.google.com/?q=' + encodeURIComponent(card.address))] : [],
+    card.address ? [row('pin', w.address, card.address, 'https://maps.google.com/?q=' + encodeURIComponent(card.address))] : [],
   ].filter((g) => g.length);
 
-  const wrap = h('div', { class: `vc ${card.style || 'aurora'}`, style: themeVars(card) }, hero);
+  const wrap = h('div', { class: `vc ${card.style || 'aurora'}`, style: themeVars(card), dir, lang }, hero);
   if (groups.length) wrap.append(h('section', { class: 'vc-details vc-glass' }, ...groups.map((g) => h('div', { class: 'vc-group' }, ...g))));
   return wrap;
 }
@@ -264,9 +304,9 @@ async function copyText(value) {
   }
 }
 
-async function shareLink(card, url) {
+async function shareLink(card, url, intro = 'Here is my card') {
   const title = `${card.name} — MK Cards`;
-  if (native) return native.share(title, `Here is my card: ${card.name}`, url);
+  if (native) return native.share(title, `${intro}: ${card.name}`, url);
   if (navigator.share) {
     try { await navigator.share({ title, url }); } catch { /* cancelled */ }
     return;
@@ -299,8 +339,10 @@ function saveVCard(text, filename) {
 
 // QR codes are generated from the card's address each time, so they can be re-made and downloaded without limit.
 function qrMatrix(value) {
+  // UTF-8 so Arabic and other scripts scan correctly.
+  window.qrcode.stringToBytes = window.qrcode.stringToBytesFuncs['UTF-8'];
   const qr = window.qrcode(0, 'M');
-  qr.addData(value);
+  qr.addData(value, 'Byte');
   qr.make();
   const n = qr.getModuleCount();
   let d = '';
@@ -489,7 +531,7 @@ function welcomeScreen() {
       h('a', { class: 'btn primary', href: '/register' }, 'Create your account')),
     renderCard({
       name: 'Alex Morgan', title: 'Product Designer', company: 'Northwind Studio',
-      phones: [{ label: 'mobile', value: '+1 555 010 2030' }], emails: [{ label: 'work', value: 'alex@example.com' }], website: 'https://example.com', accent: '#7a5cff', style: 'aurora',
+      phones: [{ label: 'mobile', value: '+1 555 010 2030' }], emails: [{ label: 'work', value: 'alex@example.com' }], website: 'https://example.com', accent: '#2a5ba8', style: 'aurora',
     }),
     h('p', { class: 'muted small center' }, 'Example card'));
 }
@@ -651,9 +693,20 @@ function editorScreen(id) {
   card.phones = card.phones || [];
   card.whatsapp = card.whatsapp || '';
   card.department = card.department || '';
+  card.whatsappMessage = card.whatsappMessage || '';
+  card.ar = { ...(card.ar || {}) };
+  let previewLang = 'en';
   card.emails = card.emails || [];
   const preview = h('div');
-  const refresh = () => preview.replaceChildren(renderCard(card));
+  // The preview can show either language once an Arabic name is written.
+  const langSwitch = h('div', { class: 'segmented preview-lang' });
+  const drawLangSwitch = () => {
+    langSwitch.hidden = !card.ar.name;
+    if (!card.ar.name) previewLang = 'en';
+    langSwitch.replaceChildren(...[['en', 'English'], ['ar', 'العربية']].map(([value, label]) =>
+      h('button', { type: 'button', 'aria-pressed': String(previewLang === value), onclick: () => { previewLang = value; drawLangSwitch(); refresh(); } }, label)));
+  };
+  const refresh = () => preview.replaceChildren(renderCard(card, { lang: previewLang }));
   const errorLine = h('p', { class: 'error', role: 'alert', hidden: true });
 
   const input = (label, key, attrs = {}) =>
@@ -793,6 +846,7 @@ function editorScreen(id) {
     go(`/share/${savedId}`);
   }
 
+  drawLangSwitch();
   refresh();
   // Where this card will live. Extra cards take their link from the card name.
   const addressBox = h('div', { class: 'linkbox' });
@@ -814,6 +868,7 @@ function editorScreen(id) {
 
   return h('form', { class: 'stack', onsubmit: submit, novalidate: true },
     topbar(entry ? 'Edit card' : 'New card', '/'),
+    langSwitch,
     preview,
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'Card name'),
       h('label', { class: 'field' }, h('span', {}, isExtra || (entry && entry.slug) ? 'Name this card' : 'Name this card (optional)'),
@@ -828,11 +883,19 @@ function editorScreen(id) {
         input('Company', 'company', { autocomplete: 'organization', maxlength: 80 })),
       input('Department (optional)', 'department', { maxlength: 80, placeholder: 'e.g. Group Procurement' }),
       input('Short bio', 'bio', { rows: 3, maxlength: 400 })),
+    h('section', { class: 'glass panel stack', dir: 'ltr' }, h('h2', {}, 'Arabic version (optional)'),
+      h('p', { class: 'muted small' }, 'Fill these in Arabic and your card page gets an العربية switch. Visitors whose phone is set to Arabic see the Arabic version first. Phone numbers, emails and links are shared by both versions.'),
+      ...[['name', 'الاسم الكامل', 80], ['title', 'المسمى الوظيفي', 80], ['company', 'الشركة', 80], ['department', 'القسم', 80], ['bio', 'نبذة', 400], ['address', 'العنوان', 160]]
+        .map(([key, label, max]) => h('label', { class: 'field', dir: 'rtl' }, h('span', {}, label),
+          h(key === 'bio' ? 'textarea' : 'input', { class: 'input', dir: 'rtl', lang: 'ar', maxlength: max, value: card.ar[key] || '', rows: key === 'bio' ? 3 : null,
+            oninput: (e) => { card.ar[key] = e.target.value; if (key === 'name') drawLangSwitch(); refresh(); } })))),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'Phones'), phoneList),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'WhatsApp'),
       input('WhatsApp number', 'whatsapp', { type: 'tel', maxlength: 40, placeholder: '+971 50 123 4567' }),
-      h('p', { class: 'muted small' }, 'Include the country code. Your card page gets a "Chat on WhatsApp" button that opens a chat with this number.')),
-    h('section', { class: 'glass panel stack' }, h('h2', {}, 'Emails'), emailList),
+      input('Ready-made message (optional)', 'whatsappMessage', { rows: 2, maxlength: 300, placeholder: 'Hello, I got your details from your MK Cards page.' }),
+      h('p', { class: 'muted small' }, 'Include the country code. Your card gets a WhatsApp button that opens a chat with this number; the message above is already typed in, ready to send.')),
+    h('section', { class: 'glass panel stack' }, h('h2', {}, 'Emails'),
+      h('p', { class: 'muted small' }, `Add as many as you need (up to ${MAX_ENTRIES}), each marked Work, Personal or Other.`), emailList),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'Website and address'),
       input('Website', 'website', { type: 'url', inputmode: 'url', placeholder: 'https://', maxlength: 300 }),
       input('Address', 'address', { autocomplete: 'street-address', maxlength: 160 })),
@@ -964,21 +1027,39 @@ function publicScreen(username, slug = '') {
     document.body.setAttribute('style', themeVars(card));
     // Paint the whole page, however long, not just the first screen (iPhones ignore fixed backgrounds).
     document.documentElement.style.background = cardTheme(card).page;
-    const saveContact = async () => {
-      if (!native) { location.href = `/api/public/vcard?${query}`; return; }
-      try {
-        const res = await fetch(`/api/public/vcard?${query}`);
-        native.saveContact(await res.text(), `${username}.vcf`);
-      } catch { toast('No connection. Check your internet and try again.'); }
+    // Language: the visitor's choice, else Arabic for Arabic-speaking phones when the card has an Arabic version.
+    const saved = (() => { try { return localStorage.getItem('mk_card_lang'); } catch { return null; } })();
+    const asked = new URLSearchParams(location.search).get('lang');
+    let lang = hasArabic(card) && (asked || saved || (navigator.language || '').slice(0, 2)) === 'ar' ? 'ar' : 'en';
+
+    const draw = () => {
+      const w = CARD_WORDS[lang];
+      const shown = inLanguage(card, lang);
+      document.title = `${shown.name} — MK Cards`;
+      const vcardQuery = `${query}${lang === 'ar' ? '&lang=ar' : ''}`;
+      const saveContact = async () => {
+        if (!native) { location.href = `/api/public/vcard?${vcardQuery}`; return; }
+        try {
+          const res = await fetch(`/api/public/vcard?${vcardQuery}`);
+          native.saveContact(await res.text(), `${username}.vcf`);
+        } catch { toast('No connection. Check your internet and try again.'); }
+      };
+      root.replaceChildren(...[
+        mine && topbar('Preview', `/share/${mine.id}`),
+        hasArabic(card) && h('div', { class: 'vc-lang' }, h('button', { class: 'vc-pill small', lang: lang === 'ar' ? 'en' : 'ar', onclick: () => {
+          lang = lang === 'ar' ? 'en' : 'ar';
+          try { localStorage.setItem('mk_card_lang', lang); } catch { /* private mode */ }
+          draw();
+        } }, w.other)),
+        renderCard(card, { actions: { save: saveContact }, lang }),
+        h('div', { class: 'vc-pills', dir: lang === 'ar' ? 'rtl' : 'ltr' },
+          h('button', { class: 'vc-pill', onclick: () => shareLink(shown, url, w.hereIs) }, icon('share'), w.share),
+          h('button', { class: 'vc-pill', onclick: () => cardQrSheet(shown, url, w) }, icon('qr'), w.qr),
+          !mine && h('button', { class: 'vc-pill', onclick: () => exchangeSheet(username, slug, shown, contactEmail, url) }, icon('mail'), w.send)),
+        h('p', { class: 'vc-footer' }, me.user ? 'MK Cards' : h('a', { href: '/' }, 'MK Cards')),
+      ].filter(Boolean));
     };
-    root.replaceChildren(...[
-      mine && topbar('Preview', `/share/${mine.id}`),
-      renderCard(card, { actions: { save: saveContact } }),
-      h('div', { class: 'vc-pills' },
-        h('button', { class: 'vc-pill', onclick: () => shareLink(card, url) }, icon('share'), 'Share'),
-        !mine && h('button', { class: 'vc-pill', onclick: () => exchangeSheet(username, slug, card, contactEmail, url) }, icon('mail'), 'Send my details')),
-      h('p', { class: 'vc-footer' }, me.user ? 'MK Cards' : h('a', { href: '/' }, 'MK Cards')),
-    ].filter(Boolean));
+    draw();
   }).catch((err) => {
     root.replaceChildren(err.status === 404
       ? missingScreen('This card does not exist, or its owner has deleted it.')
@@ -986,6 +1067,18 @@ function publicScreen(username, slug = '') {
           h('button', { class: 'btn', onclick: () => render() }, 'Try again')));
   });
   return root;
+}
+
+// A large QR code holding the contact itself, for a guest to scan with their own phone's camera.
+function cardQrSheet(card, link, w) {
+  sheet((close) => [
+    h('div', { class: 'qr-sheet', dir: w === CARD_WORDS.ar ? 'rtl' : 'ltr' },
+      h('h1', { dir: 'auto' }, card.name),
+      h('p', { class: 'qr-sheet-title' }, w.scan),
+      qrBox(qrVCard(card, link), true),
+      h('p', { class: 'muted small' }, w.scanNote)),
+    h('button', { class: 'btn block', onclick: close }, w.close),
+  ]);
 }
 
 // The visitor fills in their details; sending opens their own email app with a ready-made message to the
