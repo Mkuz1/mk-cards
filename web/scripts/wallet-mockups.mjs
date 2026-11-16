@@ -12,16 +12,17 @@ const qrLib = readFileSync(new URL('../public/vendor/qrcode.js', import.meta.url
 
 const samples = [
   {
-    slug: 'mohamad', label: '',
-    card: { name: 'محمد القلموني', title: 'Founder & CEO', company: 'Qalamoun Group', accent: '#5b8cff', style: 'aurora',
-      phones: [{ label: 'mobile', value: '+971 50 111 2222' }, { label: 'work', value: '+963 11 222 3333' }],
-      emails: [{ label: 'work', value: 'mohamad@qalamoun.example' }], website: 'https://qalamoun.example', whatsapp: '+971501112222' },
+    slug: 'mkoussa/work', label: 'Work',
+    card: { name: 'Mohamad Koussa', title: 'Group Head of Procurement & Supply Chain', department: 'Group Procurement', company: 'Bukhatir Group',
+      accent: '#5b8cff', style: 'aurora',
+      phones: [{ label: 'mobile', value: '+971 52 692 9505' }, { label: 'work', value: '+971 6 512 6060' }],
+      emails: [{ label: 'work', value: 'mohamad.koussa@bukhatir.ae' }], website: 'https://bukhatirgroup.com', whatsapp: '+971526929505' },
   },
   {
-    slug: 'sara', label: 'Work',
+    slug: 'sara', label: '',
     card: { name: 'Sara Haddad', title: 'Senior Architect', company: 'Atelier Nour', accent: '#e0559a', style: 'aurora',
       phones: [{ label: 'mobile', value: '+961 3 555 120' }], emails: [{ label: 'work', value: 'sara@ateliernour.example' }],
-      website: 'https://ateliernour.example' },
+      website: 'https://ateliernour.example', whatsapp: '+9613555120' },
   },
   {
     slug: 'omar', label: '',
@@ -29,6 +30,7 @@ const samples = [
       phones: [{ label: 'mobile', value: '+966 55 010 2030' }], emails: [{ label: 'work', value: 'omar@saidco.example' }] },
   },
 ];
+export { samples };
 
 const dataUri = (file, type) => `data:${type};base64,${readFileSync(file).toString('base64')}`;
 const logoWhite = dataUri(new URL('../public/wallet/logo@3x.png', import.meta.url), 'image/png');
@@ -36,21 +38,24 @@ const googleLogo = dataUri(new URL('../public/wallet/google-logo.png', import.me
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const rgb = (c) => `rgb(${c.join(',')})`;
 
-function applePass(s, i) {
+function applePass(s) {
   const { card } = s;
   const c = passColours(card);
-  const secondary = [card.company && ['COMPANY', card.company], card.phones[0] && ['PHONE', card.phones[0].value]].filter(Boolean);
+  const phoneLabel = (p) => ({ mobile: 'MOBILE', work: 'OFFICE', home: 'HOME' })[p.label] || 'PHONE';
+  const secondary = [
+    card.phones[0] && [phoneLabel(card.phones[0]), card.phones[0].value],
+    card.phones[1] ? [phoneLabel(card.phones[1]), card.phones[1].value] : card.whatsapp ? ['WHATSAPP', card.whatsapp] : null,
+  ].filter(Boolean);
   const auxiliary = card.emails[0] ? [['EMAIL', card.emails[0].value]] : [];
   const row = (fields) => `<div class="a-row">${fields.map(([l, v]) => `<div class="a-field"><div class="a-label">${l}</div><div class="a-value" dir="auto">${esc(v)}</div></div>`).join('')}</div>`;
   return `<div class="apple-pass" style="background:${rgb(c.background)};--label:${rgb(c.label)}">
-    <div class="a-top"><img class="a-logo" src="${logoWhite}"><span class="a-logotext">MK Cards</span>
+    <div class="a-top"><span class="a-logotext">${esc(card.company || card.name)}</span>
       ${s.label ? `<div class="a-header"><div class="a-label">CARD</div><div class="a-hvalue">${esc(s.label)}</div></div>` : ''}</div>
     <div class="a-primary"><div><div class="a-label">${esc((card.title || 'Business card').toUpperCase())}</div>
-      <div class="a-name" dir="auto">${esc(card.name)}</div></div>
-      <img class="a-thumb" src="${dataUri(`${art}/art-${i}-thumb.png`, 'image/png')}"></div>
+      <div class="a-name" dir="auto">${esc(card.name)}</div></div></div>
     ${row(secondary)}${auxiliary.length ? row(auxiliary) : ''}
     <div class="a-barcode"><div class="qr" data-text="${encodeURIComponent(qrVCard(card, `https://mkcards.pages.dev/${s.slug}`))}"></div>
-      <div class="a-alt">Scan to save contact</div></div>
+      <div class="a-alt">MK Cards</div></div>
     <div class="a-info">i</div>
   </div>`;
 }
@@ -59,11 +64,12 @@ function appleBack(s) {
   const { card } = s;
   const link = `https://mkcards.pages.dev/${s.slug}`;
   const rows = [
-    ...card.phones.map((p) => [`${p.label.toUpperCase()} PHONE`, `<a>${esc(p.value)}</a>`]),
-    ...card.emails.map((e) => [`${e.label.toUpperCase()} EMAIL`, `<a>${esc(e.value)}</a>`]),
+    card.company && ['COMPANY', esc([card.company, card.department].filter(Boolean).join(' · '))],
+    ...card.phones.map((p) => [({ mobile: 'MOBILE', work: 'OFFICE', home: 'HOME' })[p.label] || 'PHONE', `<a>${esc(p.value)}</a>`]),
+    ...card.emails.map((e) => ['EMAIL', `<a>${esc(e.value)}</a>`]),
     card.whatsapp && ['WHATSAPP', `<a>${esc(card.whatsapp)}</a>`],
     card.website && ['WEBSITE', `<a>${esc(card.website)}</a>`],
-    ['MY MK CARD', `<a>${link.replace('https://', '')}</a>`],
+    ['MY CARD', `<a>${link.replace('https://', '')}</a>`],
     ['SAVE THIS CONTACT', 'Scan the QR code on the front with any phone camera to add this contact.'],
   ].filter(Boolean);
   return `<div class="apple-back"><div class="ab-title">Pass Details</div>
@@ -118,19 +124,19 @@ body { font-family: -apple-system, "SF Pro Text", Inter, "Segoe UI", Roboto, "No
 .apple-pass { position: relative; border-radius: 14px; padding: 12px 14px 16px; color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.12) inset; }
 .a-top { display: flex; align-items: center; gap: 8px; height: 40px; }
 .a-logo { height: 30px; }
-.a-logotext { font-size: 17px; font-weight: 600; flex: 1; }
+.a-logotext { font-size: 17px; font-weight: 600; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .a-header { text-align: right; }
 .a-hvalue { font-size: 17px; }
 .a-label { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; color: var(--label); }
-.a-primary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 18px; }
-.a-name { font-size: 26px; font-weight: 400; line-height: 1.15; margin-top: 2px; }
+.a-primary { margin: 26px 0 22px; }
+.a-name { font-size: 30px; font-weight: 400; line-height: 1.15; margin-top: 4px; }
 .a-thumb { width: 90px; height: 90px; flex: none; }
 .a-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; }
 .a-field:last-child:not(:first-child) { text-align: right; }
 .a-value { font-size: 16px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
 .a-barcode { background: #fff; color: #000; border-radius: 8px; width: 180px; margin: 26px auto 0; padding: 12px 12px 8px; text-align: center; }
 .a-barcode .qr svg { width: 156px; height: 156px; display: block; }
-.a-alt { font-size: 11px; margin-top: 6px; }
+.a-alt { font-size: 10px; margin-top: 6px; letter-spacing: .06em; color: #555; }
 .a-info { position: absolute; right: 12px; bottom: 12px; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.85);
   font: 600 13px/19px Georgia, serif; text-align: center; font-style: italic; }
 .stack-behind { height: 10px; margin: 0 8px; border-radius: 12px 12px 0 0; }
@@ -177,14 +183,14 @@ for (const el of document.querySelectorAll('.qr')) {
 }`;
 
 const screens = [
-  { file: 'apple-wallet-front', caption: 'Apple Wallet — front', note: 'Photo, title and name; company, phone and email; QR that saves the contact',
-    html: phone('Wallet', `<div class="stack-behind" style="background:#2c2c2e"></div>${applePass(samples[0], 0)}`) },
+  { file: 'apple-wallet-front', caption: 'Apple Wallet — front', note: 'Company at the top, title and name, phones and email; QR saves the contact; MK Cards in small print',
+    html: phone('Wallet', `<div class="stack-behind" style="background:#2c2c2e"></div>${applePass(samples[0])}`) },
   { file: 'apple-wallet-details', caption: 'Apple Wallet — pass details', note: 'Every phone, email and link, all tappable',
     html: phone('', appleBack(samples[0])) },
   { file: 'google-wallet-front', caption: 'Google Wallet — front', note: 'Name, role, phone and email, QR, and the card banner',
     html: phone('', googlePass(samples[0], 0), false) },
-  { file: 'apple-wallet-sara', caption: 'Apple Wallet — another colour', note: 'Pass colour follows each card; extra cards show their name (“Work”)',
-    html: phone('Wallet', `<div class="stack-behind" style="background:#2c2c2e"></div>${applePass(samples[1], 1)}`) },
+  { file: 'apple-wallet-sara', caption: 'Apple Wallet — another colour', note: 'The pass colour follows the card; orange and yellow cards get silver labels instead of gold',
+    html: phone('Wallet', `<div class="stack-behind" style="background:#2c2c2e"></div>${applePass(samples[1])}`) },
   { file: 'google-wallet-omar', caption: 'Google Wallet — another colour', note: 'Card with no photo uses initials',
     html: phone('', googlePass(samples[2], 2), false) },
 ];

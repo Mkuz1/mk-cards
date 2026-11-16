@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
-import { ART_VERSION, drawCardArt } from './card-art.js';
+import { ART_VERSION, cardTheme, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '1.7.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '1.8.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -42,6 +42,8 @@ const ICONS = {
   copy: '<rect x="8" y="8" width="12" height="12" rx="3"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   save: '<path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.500" cy="7" r="4"/><path d="M19 8v6M16 11h6"/>',
   download: '<path d="M12 4v11M8 11l4 4 4-4M5 19h14"/>',
+  whatsapp: '<path d="M4 20l1.300-4A8.500 8.500 0 1 1 8 18.700L4 20z"/><path d="M9.200 8.600c.2-.5.6-.6.9-.6h.5c.2 0 .4.1.5.4l.7 1.600c.1.2 0 .5-.1.6l-.5.6c-.1.1-.1.3 0 .5a6 6 0 0 0 2.700 2.400c.2.1.4 0 .5-.1l.6-.7c.1-.2.4-.2.6-.1l1.600.8c.2.1.3.3.3.5 0 .9-.6 1.600-1.400 1.800-1 .3-2.700-.2-4.400-1.700-1.600-1.400-2.500-3-2.500-4 0-.6.3-1.300.5-1.900z"/>',
+  chevron: '<path d="M9 6l6 6-6 6"/>',
   chat: '<path d="M20 11.500a8 8 0 0 1-11.800 7L4 20l1.500-4.200A8 8 0 1 1 20 11.500z"/><path d="M9 10.500h6M9 13.500h4"/>',
   qr: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 14h2M14 18h2v2M19 17v3"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
@@ -121,43 +123,88 @@ const initials = (name) =>
   (name || '').trim().split(/\s+/).slice(0, 2).map((p) => p[0] || '').join('').toUpperCase() || 'MK';
 const prettyUrl = (url) => url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
 
-function renderCard(card, { compact = false } = {}) {
-  const el = h('article', { class: `card ${card.style || 'aurora'}${compact ? ' compact' : ''}` });
-  el.style.setProperty('--card-accent', card.accent || '#5b8cff');
-  const avatar = card.photo
-    ? h('img', { class: 'avatar', src: card.photo, alt: '' })
-    : h('div', { class: 'avatar', 'aria-hidden': 'true' }, initials(card.name));
-  const role = [card.title, card.company].filter(Boolean).join(' · ');
+// ---------- the card ----------
 
+// All shades are worked out here (not with CSS colour functions) so the card looks right on older iPhones too.
+function themeVars(card) {
+  const t = cardTheme(card);
+  const rgba = (c, alpha) => `rgba(${hexRgb(c).join(',')},${alpha})`;
+  return [
+    `--deep:${t.deep}`, `--deep-top:${mixHex(t.deep, '#ffffff', 0.08)}`,
+    `--glow:${rgba(t.glow, 0.5)}`, `--tint:${rgba(t.a, 0.28)}`,
+    `--hi:${t.hi}`, `--hi-top:${mixHex(t.hi, '#ffffff', 0.25)}`, `--hi-bottom:${mixHex(t.hi, '#000000', 0.12)}`,
+    `--hi-glow:${rgba(t.hi, 0.5)}`, `--hi-ink:${mixHex(t.hi, '#000000', 0.82)}`,
+  ].join(';');
+}
+
+const phoneLabel = (p) => ({ mobile: 'Mobile', work: 'Office', home: 'Home' })[p.label] || 'Phone';
+const emailLabel = (e) => ({ work: 'Work', personal: 'Personal' })[e.label] || 'Email';
+const telHref = (v) => 'tel:' + v.replace(/[^\d+]/g, '');
+const waHref = (v) => 'https://wa.me/' + v.replace(/\D/g, '');
+
+function avatarOf(card, cls) {
+  return card.photo
+    ? h('img', { class: cls, src: card.photo, alt: '' })
+    : h('div', { class: cls, 'aria-hidden': 'true' }, h('span', {}, initials(card.name)));
+}
+
+/**
+ * Draws a card. `actions.save` is called by the "Save contact" button on the public page; without it (in the
+ * editor preview) the quick buttons are shown for looks only.
+ */
+function renderCard(card, { compact = false, actions = null } = {}) {
   if (compact) {
-    el.append(h('div', { class: 'row' }, avatar, h('div', { class: 'grow' },
-      h('p', { class: 'name', dir: 'auto' }, card.name || 'Your name'), role && h('p', { class: 'role', dir: 'auto' }, role))));
-    return el;
+    const role = [card.title, card.company].filter(Boolean).join(' · ');
+    return h('article', { class: `vc-mini ${card.style || 'aurora'}`, style: themeVars(card) },
+      avatarOf(card, 'vc-avatar small'),
+      h('div', { class: 'grow' },
+        h('p', { class: 'vc-name', dir: 'auto' }, card.name || 'Your name'),
+        role && h('p', { class: 'vc-title', dir: 'auto' }, role)));
   }
 
-  el.append(avatar, h('p', { class: 'name', dir: 'auto' }, card.name || 'Your name'));
-  if (role) el.append(h('p', { class: 'role', dir: 'auto' }, role));
-  if (card.bio) el.append(h('p', { class: 'bio', dir: 'auto' }, card.bio));
+  const phones = (card.phones || []).filter((p) => p.value);
+  const emails = (card.emails || []).filter((e) => e.value);
+  const live = Boolean(actions);
+  const tile = (iconName, label, href, extra = {}) => h(live && href ? 'a' : 'button', {
+    class: `vc-action${extra.primary ? ' primary' : ''}`, href: live ? href : null, type: href ? null : 'button',
+    target: href && /^https?:/.test(href) ? '_blank' : null, rel: 'noopener', tabindex: live ? null : '-1',
+    onclick: extra.onclick || null,
+  }, icon(iconName), h('span', {}, label));
+  const quick = [
+    tile('save', 'Save contact', null, { primary: true, onclick: live ? actions.save : null }),
+    card.whatsapp && tile('whatsapp', 'WhatsApp', waHref(card.whatsapp)),
+    emails[0] && tile('mail', 'Email', 'mailto:' + emails[0].value),
+    phones[0] && tile('phone', 'Call', telHref(phones[0].value)),
+  ].filter(Boolean);
 
-  const fact = (iconName, label, value, href) =>
-    h(href ? 'a' : 'div', { class: 'fact', href, target: href && /^https?:/.test(href) ? '_blank' : null, rel: 'noopener' },
-      icon(iconName), h('span', {}, h('small', {}, label), h('bdi', {}, value)));
-  const facts = h('div', { class: 'facts' });
-  for (const p of card.phones || []) {
-    if (!p.value) continue;
-    facts.append(fact('phone', p.label === 'other' ? 'Phone' : `${PHONE_LABELS[p.label] || ''} phone`.trim(), p.value, 'tel:' + p.value.replace(/[^\d+]/g, '')));
-  }
-  for (const e of card.emails || []) {
-    if (!e.value) continue;
-    facts.append(fact('mail', e.label === 'other' ? 'Email' : `${EMAIL_LABELS[e.label] || ''} email`.trim(), e.value, 'mailto:' + e.value));
-  }
-  if (card.website) facts.append(fact('globe', 'Website', prettyUrl(card.website), card.website));
-  if (card.address) facts.append(fact('pin', 'Address', card.address));
-  for (const link of card.links || []) {
-    facts.append(fact('link', link.label || LINK_TYPES[link.type] || 'Link', prettyUrl(link.url), link.url));
-  }
-  if (facts.children.length) el.append(facts);
-  return el;
+  const orgLine = card.department ? [card.department, card.company].filter(Boolean).join(' · ') : '';
+  const hero = h('article', { class: `vc-hero vc-glass${live ? '' : ' preview'}` },
+    card.company && h('p', { class: 'vc-eyebrow', dir: 'auto' }, card.company),
+    avatarOf(card, 'vc-avatar'),
+    h('h2', { class: 'vc-name', dir: 'auto' }, card.name || 'Your name'),
+    card.title && h('p', { class: 'vc-title', dir: 'auto' }, card.title),
+    orgLine && h('p', { class: 'vc-org', dir: 'auto' }, orgLine),
+    card.bio && h('p', { class: 'vc-bio', dir: 'auto' }, card.bio),
+    h('span', { class: 'vc-rule', 'aria-hidden': 'true' }),
+    h('div', { class: 'vc-actions', style: `--n:${quick.length}` }, ...quick));
+
+  const row = (iconName, label, value, href) => h(href ? 'a' : 'div', {
+    class: 'vc-row', href, target: href && /^https?:/.test(href) ? '_blank' : null, rel: 'noopener',
+  }, h('span', { class: 'vc-ico' }, icon(iconName)),
+  h('span', { class: 'grow' }, h('small', {}, label), h('bdi', { class: value.length > 24 ? 'long' : null }, value)),
+  href ? h('span', { class: 'vc-chev' }, icon('chevron')) : null);
+  const groups = [
+    phones.map((p) => row('phone', phoneLabel(p), p.value, telHref(p.value))),
+    card.whatsapp ? [row('whatsapp', 'WhatsApp', card.whatsapp, waHref(card.whatsapp))] : [],
+    emails.map((e) => row('mail', emailLabel(e), e.value, 'mailto:' + e.value)),
+    [card.website && row('globe', 'Website', prettyUrl(card.website), card.website),
+      ...(card.links || []).filter((l) => l.url).map((l) => row('link', l.label || LINK_TYPES[l.type] || 'Link', prettyUrl(l.url), l.url))].filter(Boolean),
+    card.address ? [row('pin', 'Address', card.address, 'https://maps.google.com/?q=' + encodeURIComponent(card.address))] : [],
+  ].filter((g) => g.length);
+
+  const wrap = h('div', { class: `vc ${card.style || 'aurora'}`, style: themeVars(card) }, hero);
+  if (groups.length) wrap.append(h('section', { class: 'vc-details vc-glass' }, ...groups.map((g) => h('div', { class: 'vc-group' }, ...g))));
+  return wrap;
 }
 
 function toast(message, action) {
@@ -575,13 +622,14 @@ function editorScreen(id) {
   const first = me.cards[0] && me.cards[0].card;
 
   const card = entry ? JSON.parse(JSON.stringify(entry.card)) : {
-    label: '', name: first ? first.name : '', title: '', company: '', bio: '', whatsapp: '',
+    label: '', name: first ? first.name : '', title: '', company: first ? first.company : '', department: '', bio: '', whatsapp: '',
     phones: [{ label: 'mobile', value: '' }],
     emails: [{ label: 'work', value: first ? '' : me.user.email }],
     website: '', address: '', photo: '', accent: ACCENTS[me.cards.length % ACCENTS.length], style: 'aurora', links: [],
   };
   card.phones = card.phones || [];
   card.whatsapp = card.whatsapp || '';
+  card.department = card.department || '';
   card.emails = card.emails || [];
   const preview = h('div');
   const refresh = () => preview.replaceChildren(renderCard(card));
@@ -753,6 +801,7 @@ function editorScreen(id) {
       h('div', { class: 'grid-2' },
         input('Job title', 'title', { autocomplete: 'organization-title', maxlength: 80 }),
         input('Company', 'company', { autocomplete: 'organization', maxlength: 80 })),
+      input('Department (optional)', 'department', { maxlength: 80, placeholder: 'e.g. Group Procurement' }),
       input('Short bio', 'bio', { rows: 3, maxlength: 400 })),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'Phones'), phoneList),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'WhatsApp'),
@@ -885,23 +934,23 @@ function publicScreen(username, slug = '') {
 
   api(`/public/card?${query}${mine ? '' : '&view'}`).then(({ card, contactEmail }) => {
     document.title = `${card.name} — MK Cards`;
+    // The page takes on the card's colours, like the reference design: a deep backdrop with a soft glow.
+    document.body.classList.add('card-page');
+    document.body.setAttribute('style', themeVars(card));
+    const saveContact = async () => {
+      if (!native) { location.href = `/api/public/vcard?${query}`; return; }
+      try {
+        const res = await fetch(`/api/public/vcard?${query}`);
+        native.saveContact(await res.text(), `${username}.vcf`);
+      } catch { toast('No connection. Check your internet and try again.'); }
+    };
     root.replaceChildren(...[
       mine && topbar('Preview', `/share/${mine.id}`),
-      renderCard(card),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn primary grow', onclick: async () => {
-          if (!native) { location.href = `/api/public/vcard?${query}`; return; }
-          try {
-            const res = await fetch(`/api/public/vcard?${query}`);
-            native.saveContact(await res.text(), `${username}.vcf`);
-          } catch { toast('No connection. Check your internet and try again.'); }
-        } }, icon('download'), 'Download vCard'),
-        h('button', { class: 'btn icon', 'aria-label': 'Share this card', onclick: () => shareLink(card, url) }, icon('share'))),
-      card.whatsapp && h('a', { class: 'btn block whatsapp', href: 'https://wa.me/' + card.whatsapp.replace(/\D/g, ''), target: '_blank', rel: 'noopener' },
-        icon('chat'), 'Chat on WhatsApp'),
-      !mine && h('button', { class: 'btn block', onclick: () => exchangeSheet(username, slug, card, contactEmail, url) }, icon('mail'), `Share your details with ${card.name.split(/\s+/)[0]}`),
-      !mine && !me.user && h('p', { class: 'center small muted', style: 'margin-top:8px' },
-        'Made with ', h('a', { href: '/' }, 'MK Cards'), ' — create your own card.'),
+      renderCard(card, { actions: { save: saveContact } }),
+      h('div', { class: 'vc-pills' },
+        h('button', { class: 'vc-pill', onclick: () => shareLink(card, url) }, icon('share'), 'Share'),
+        !mine && h('button', { class: 'vc-pill', onclick: () => exchangeSheet(username, slug, card, contactEmail, url) }, icon('mail'), 'Send my details')),
+      h('p', { class: 'vc-footer' }, me.user ? 'MK Cards' : h('a', { href: '/' }, 'MK Cards')),
     ].filter(Boolean));
   }).catch((err) => {
     root.replaceChildren(err.status === 404
@@ -1071,6 +1120,8 @@ const routes = [
 
 function render() {
   const path = location.pathname.replace(/\/+$/, '') || '/';
+  document.body.classList.remove('card-page');
+  document.body.removeAttribute('style');
   document.title = 'MK Cards';
   let screen = missingScreen('That page does not exist.', 'Page not found');
   let tab = null;

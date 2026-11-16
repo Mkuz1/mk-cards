@@ -29,7 +29,7 @@ export function qrVCard(card, link) {
   const parts = (card.name || '').trim().split(/\s+/);
   const family = parts.length > 1 ? parts.pop() : '';
   const lines = ['BEGIN:VCARD', 'VERSION:3.0', `N:${esc(family)};${esc(parts.join(' '))};;;`, `FN:${esc(card.name)}`];
-  if (card.company) lines.push(`ORG:${esc(card.company)}`);
+  if (card.company || card.department) lines.push(`ORG:${esc(card.company)}${card.department ? ';' + esc(card.department) : ''}`);
   if (card.title) lines.push(`TITLE:${esc(card.title)}`);
   const tel = { mobile: 'CELL', work: 'WORK', home: 'HOME' };
   for (const p of (card.phones || []).slice(0, 3)) lines.push(`TEL;TYPE=${tel[p.label] || 'VOICE'}:${esc(p.value)}`);
@@ -41,27 +41,34 @@ export function qrVCard(card, link) {
 
 const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
 const mixRgb = (a, b, t) => hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * t));
+const toHex = (c) => `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 
-/** The pass colours: a deep shade of the card's accent, so white text always reads well. */
+function hueOf(c) {
+  const [r, g, b] = hex(c).map((v) => v / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  if (!d) return 0;
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
+/** The pass colours, the same rules as the card page: a deep shade of the card's colour, white text, and a fine
+ * highlight (gold, or silver when the card's colour is itself warm) for the small labels. */
 export function passColours(card) {
   const accent = /^#[0-9a-f]{6}$/i.test(card.accent || '') ? card.accent : '#5b8cff';
-  const bg = card.style === 'mono' ? [28, 32, 46] : mixRgb(accent, '#0b1020', card.style === 'solid' ? 0.25 : 0.4);
-  const label = mixRgb(`#${bg.map((v) => v.toString(16).padStart(2, '0')).join('')}`, '#ffffff', 0.68);
-  return {
-    background: bg,
-    label,
-    hex: `#${bg.map((v) => v.toString(16).padStart(2, '0')).join('')}`,
-  };
+  const bg = card.style === 'mono' ? hex('#12151d') : mixRgb(accent, '#060a18', card.style === 'solid' ? 0.6 : 0.74);
+  const hue = hueOf(accent);
+  const label = hue >= 18 && hue <= 70 ? hex('#efeae0') : hex('#d9b65a');
+  return { background: bg, label, hex: toHex(bg) };
 }
 
 const rgb = (c) => `rgb(${c.join(',')})`;
-const roleOf = (card) => [card.title, card.company].filter(Boolean).join(' · ');
 const asset = (path) => Uint8Array.from(atob(ASSETS[path].base64), (ch) => ch.charCodeAt(0));
 
 // ---------- Apple Wallet ----------
 
-/** Builds a signed .pkpass file. `thumb` is the card's 270×270 photo tile (PNG bytes) or null. */
-export async function applePass(env, { cardId, card, link, thumb }) {
+/** Builds a signed .pkpass file: a clean business card with no photo, the company at the top and
+ * "MK Cards" in small print under the QR code. */
+export async function applePass(env, { cardId, card, link }) {
   const cert = forge.pki.certificateFromPem(pem(env.APPLE_PASS_CERT));
   const key = forge.pki.privateKeyFromPem(pem(env.APPLE_PASS_KEY));
   // The certificate itself names the pass type (UID) and the developer team (OU).
@@ -74,35 +81,41 @@ export async function applePass(env, { cardId, card, link, thumb }) {
   const phones = card.phones || [];
   const emails = card.emails || [];
   const field = (key, label, value, extra = {}) => ({ key, label, value, ...extra });
-  // Front: company and phone side by side, then the email on a row of its own so it is not cut short.
+  const phoneLabel = (p) => ({ mobile: 'MOBILE', work: 'OFFICE', home: 'HOME' })[p.label] || 'PHONE';
+
+  // Front: the name (with the role above it), two phone numbers or phone + WhatsApp, then the email in full.
   const secondary = [
-    card.company && field('company', 'COMPANY', card.company),
-    phones[0] && field('phone', 'PHONE', phones[0].value),
+    phones[0] && field('phone', phoneLabel(phones[0]), phones[0].value),
+    phones[1] ? field('phone2', phoneLabel(phones[1]), phones[1].value)
+      : card.whatsapp ? field('wa', 'WHATSAPP', card.whatsapp) : null,
   ].filter(Boolean);
-  const auxiliary = emails[0] ? [field('email', 'EMAIL', emails[0].value)] : [];
+  const auxiliary = emails[0] ? [field('email', 'EMAIL', emails[0].value)]
+    : card.website ? [field('website', 'WEBSITE', card.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))] : [];
 
   const back = [
-    ...phones.map((p, i) => field(`phone${i}`, `${p.label === 'other' ? '' : p.label.toUpperCase() + ' '}PHONE`.trim(), p.value)),
-    ...emails.map((e, i) => field(`email${i}`, `${e.label === 'other' ? '' : e.label.toUpperCase() + ' '}EMAIL`.trim(), e.value)),
+    card.company && field('company', 'COMPANY', [card.company, card.department].filter(Boolean).join(' · ')),
+    ...phones.map((p, i) => field(`phone${i}`, phoneLabel(p), p.value)),
+    ...emails.map((e, i) => field(`email${i}`, e.label === 'personal' ? 'PERSONAL EMAIL' : 'EMAIL', e.value)),
     card.whatsapp && field('whatsapp', 'WHATSAPP', `https://wa.me/${card.whatsapp.replace(/\D/g, '')}`,
       { attributedValue: `<a href="https://wa.me/${card.whatsapp.replace(/\D/g, '')}">${card.whatsapp}</a>` }),
     card.website && field('web', 'WEBSITE', card.website),
     ...(card.links || []).map((l, i) => field(`link${i}`, (l.label || l.type).toUpperCase(), l.url)),
     card.address && field('address', 'ADDRESS', card.address),
     card.bio && field('bio', 'ABOUT', card.bio),
-    field('page', 'MY MK CARD', link, { attributedValue: `<a href="${link}">${link.replace(/^https?:\/\//, '')}</a>` }),
+    field('page', 'MY CARD', link, { attributedValue: `<a href="${link}">${link.replace(/^https?:\/\//, '')}</a>` }),
     field('scan', 'SAVE THIS CONTACT', 'Scan the QR code on the front with any phone camera to add this contact.'),
   ].filter(Boolean);
 
   const vcard = qrVCard(card, link);
+  const barcode = { format: 'PKBarcodeFormatQR', message: vcard, messageEncoding: 'utf-8', altText: 'MK Cards' };
   const pass = {
     formatVersion: 1,
     passTypeIdentifier,
     teamIdentifier,
     serialNumber: `mkcards-${cardId}`,
-    organizationName: 'MK Cards',
+    organizationName: card.company || 'MK Cards',
     description: `${card.name} — business card`,
-    logoText: 'MK Cards',
+    logoText: card.company || card.name,
     foregroundColor: 'rgb(255,255,255)',
     backgroundColor: rgb(colours.background),
     labelColor: rgb(colours.label),
@@ -113,8 +126,8 @@ export async function applePass(env, { cardId, card, link, thumb }) {
       auxiliaryFields: auxiliary,
       backFields: back,
     },
-    barcodes: [{ format: 'PKBarcodeFormatQR', message: vcard, messageEncoding: 'utf-8', altText: 'Scan to save contact' }],
-    barcode: { format: 'PKBarcodeFormatQR', message: vcard, messageEncoding: 'utf-8', altText: 'Scan to save contact' },
+    barcodes: [barcode],
+    barcode,
   };
 
   const enc = new TextEncoder();
@@ -123,15 +136,7 @@ export async function applePass(env, { cardId, card, link, thumb }) {
     'icon.png': asset('/wallet/icon.png'),
     'icon@2x.png': asset('/wallet/icon@2x.png'),
     'icon@3x.png': asset('/wallet/icon@3x.png'),
-    'logo.png': asset('/wallet/logo.png'),
-    'logo@2x.png': asset('/wallet/logo@2x.png'),
-    'logo@3x.png': asset('/wallet/logo@3x.png'),
   };
-  if (thumb) {
-    files['thumbnail.png'] = thumb;
-    files['thumbnail@2x.png'] = thumb;
-    files['thumbnail@3x.png'] = thumb;
-  }
 
   const manifest = {};
   for (const [name, data] of Object.entries(files)) {
@@ -198,7 +203,7 @@ function googleObject(issuer, { cardId, card, link, origin, hero }) {
     state: 'ACTIVE',
     cardTitle: text('MK Cards'),
     header: text(card.name),
-    subheader: text(roleOf(card) || 'Business card'),
+    subheader: text([card.title, card.company].filter(Boolean).join(' · ') || 'Business card'),
     hexBackgroundColor: passColours(card).hex,
     logo: { sourceUri: { uri: `${origin}/wallet/google-logo.png` }, contentDescription: text('MK Cards') },
     ...(hero ? { heroImage: { sourceUri: { uri: origin + hero }, contentDescription: text(`${card.name}'s card`) } } : {}),

@@ -591,10 +591,9 @@ async function walletPass(request, env, url, id, kind) {
 
   if (kind === 'apple.pkpass') {
     if (!ready.apple) throw new HttpError(503, 'Apple Wallet passes are not set up yet.');
-    const thumb = media.thumb ? (await mediaBytes(env, media.thumb.path)).bytes : null;
     let file;
     try {
-      file = await applePass(env, { cardId: id, card, link, thumb });
+      file = await applePass(env, { cardId: id, card, link });
     } catch (err) {
       console.error('Apple pass failed', err);
       throw new HttpError(503, 'The Apple Wallet pass could not be made. The Apple certificate needs checking.');
@@ -711,7 +710,7 @@ export function buildVCard(card, link, photo) {
   const family = nameParts.length > 1 ? nameParts.pop() : '';
   const given = nameParts.join(' ');
   const lines = ['BEGIN:VCARD', 'VERSION:3.0', `N:${esc(family)};${esc(given)};;;`, `FN:${esc(card.name)}`];
-  if (card.company) lines.push(`ORG:${esc(card.company)}`);
+  if (card.company || card.department) lines.push(`ORG:${esc(card.company)}${card.department ? ';' + esc(card.department) : ''}`);
   if (card.title) lines.push(`TITLE:${esc(card.title)}`);
   const telType = { mobile: 'CELL', work: 'WORK', home: 'HOME' };
   for (const p of card.phones || []) lines.push(`TEL;TYPE=${telType[p.label] || 'VOICE'}:${esc(p.value)}`);
@@ -823,6 +822,7 @@ function cleanCard(input) {
     name: text(input.name, 80),
     title: text(input.title, 80),
     company: text(input.company, 80),
+    department: text(input.department, 80),
     bio: text(input.bio, 400),
     label: text(input.label, 40),
     phones: cleanEntries(input.phones, input.phone, 40),
@@ -878,6 +878,7 @@ function upgradeCard(card) {
   delete card.email;
   if (typeof card.label !== 'string') card.label = '';
   if (typeof card.whatsapp !== 'string') card.whatsapp = '';
+  if (typeof card.department !== 'string') card.department = '';
   return card;
 }
 
