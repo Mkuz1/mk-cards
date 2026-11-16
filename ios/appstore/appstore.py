@@ -250,6 +250,19 @@ def attach_build():
         time.sleep(60)
 
 
+@step("Status")
+def status():
+    builds = call("GET", f"/v1/builds?filter[app]={APP}&sort=-uploadedDate&limit=8&include=preReleaseVersion")
+    rows = [f"{b['attributes']['version']}:{b['attributes']['processingState']}" for b in builds["data"]]
+    v = call("GET", f"/v1/appStoreVersions/{VID}?include=build")
+    attached = (v["data"]["relationships"]["build"].get("data") or {}).get("id")
+    names = {b["id"]: b["attributes"]["version"] for b in builds["data"]}
+    subs = call("GET", f"/v1/reviewSubmissions?filter[app]={APP}&limit=10")["data"]
+    return (f"builds {', '.join(rows)} | version {v['data']['attributes'].get('versionString')} "
+            f"{v['data']['attributes'].get('appStoreState') or v['data']['attributes'].get('appVersionState')} attached={names.get(attached, attached)} | "
+            f"submissions {', '.join(x['attributes'].get('state', '?') for x in subs)}")
+
+
 @step("Resubmit for review")
 def submit():
     subs = call("GET", f"/v1/reviewSubmissions?filter[app]={APP}&filter[platform]=IOS&limit=20")["data"]
@@ -271,8 +284,8 @@ def submit():
 
 
 ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
-for fn in (content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build, submit):
-    if fn.__name__ == "submit" and "submit" not in ONLY:
+for fn in (content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build, status, submit):
+    if fn.__name__ in ("submit", "status") and fn.__name__ not in ONLY:
         continue  # only when asked for by name
     if not ONLY or fn.__name__ in ONLY:
         fn()
