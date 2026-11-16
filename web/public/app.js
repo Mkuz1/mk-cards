@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCallBackground, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.3.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.3.1'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -1167,7 +1167,7 @@ function publicScreen(username, slug = '') {
 
   api(`/public/card?${query}${mine ? '' : '&view'}`).then((data) => {
     if (data.inactive) { root.replaceChildren(inactiveCardScreen(data)); return; }
-    const { card, contactEmail } = data;
+    const { card, contactEmail, reportEmail } = data;
     document.title = `${card.name} — MK Cards`;
     // The page takes on the card's colours, like the reference design: a deep backdrop with a soft glow.
     document.body.classList.add('card-page');
@@ -1204,6 +1204,9 @@ function publicScreen(username, slug = '') {
           h('button', { class: 'vc-pill', onclick: () => { track('qr'); cardQrSheet(shown, url, w); } }, icon('qr'), w.qr),
           !mine && h('button', { class: 'vc-pill', onclick: () => exchangeSheet(username, slug, shown, contactEmail, url) }, icon('mail'), w.send)),
         h('p', { class: 'vc-footer' }, me.user ? 'MK Cards' : h('a', { href: '/' }, 'MK Cards')),
+        !mine && reportEmail && h('p', { class: 'vc-report' }, h('a', {
+          href: `mailto:${reportEmail}?subject=${encodeURIComponent(`Report: ${url}`)}&body=${encodeURIComponent(`I would like to report this MK Cards card:\n${url}\n\nReason:\n`)}`,
+        }, lang === 'ar' ? 'الإبلاغ عن هذه البطاقة' : 'Report this card')),
       ].filter(Boolean));
     };
     draw();

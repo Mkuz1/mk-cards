@@ -239,8 +239,30 @@ def attach_build():
         time.sleep(60)
 
 
+@step("Resubmit for review")
+def submit():
+    subs = call("GET", f"/v1/reviewSubmissions?filter[app]={APP}&filter[platform]=IOS&limit=20")["data"]
+    states = {x["id"]: x["attributes"].get("state") for x in subs}
+    busy = [i for i, st in states.items() if st in ("WAITING_FOR_REVIEW", "IN_REVIEW")]
+    if busy:
+        return "already waiting for review"
+    ready = [i for i, st in states.items() if st in ("UNRESOLVED_ISSUES", "READY_FOR_REVIEW")]
+    if ready:
+        sid = ready[0]
+    else:
+        sid = call("POST", "/v1/reviewSubmissions", {"data": {"type": "reviewSubmissions", "attributes": {"platform": "IOS"},
+            "relationships": {"app": {"data": {"type": "apps", "id": APP}}}}})["data"]["id"]
+        call("POST", "/v1/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {
+            "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sid}},
+            "appStoreVersion": {"data": {"type": "appStoreVersions", "id": VID}}}}})
+    call("PATCH", f"/v1/reviewSubmissions/{sid}", {"data": {"type": "reviewSubmissions", "id": sid, "attributes": {"submitted": True}}})
+    return f"submitted (was {states.get(sid, 'new')})"
+
+
 ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
-for fn in (content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build):
+for fn in (content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build, submit):
+    if fn.__name__ == "submit" and "submit" not in ONLY:
+        continue  # only when asked for by name
     if not ONLY or fn.__name__ in ONLY:
         fn()
 

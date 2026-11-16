@@ -1772,7 +1772,9 @@ async function publicCard(env, url) {
     ]);
   }
   // contactEmail is the owner's account email: the page's "share your details" button writes to it.
-  return json({ username: row.username, slug: row.slug, card: readCard(row.data), contactEmail: row.email });
+  // reportEmail: where visitors can report a card that breaks the rules.
+  return json({ username: row.username, slug: row.slug, card: readCard(row.data), contactEmail: row.email,
+    reportEmail: isEmail(env.SUPPORT_EMAIL || '') ? env.SUPPORT_EMAIL : '' });
 }
 
 async function publicVCard(env, url) {
