@@ -7,7 +7,8 @@ import { passColours, qrVCard } from '../src/wallet.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
-const [out] = process.argv.slice(2);
+// Optional second argument: a banner image made by the site (card-art.js), used instead of the sketch below.
+const [out, realStrip] = process.argv.slice(2);
 const qrLib = readFileSync(new URL('../public/vendor/qrcode.js', import.meta.url), 'utf8');
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const rgb = (c) => `rgb(${c.join(',')})`;
@@ -57,7 +58,7 @@ body { font-family: -apple-system, "SF Pro Text", Inter, "Segoe UI", Roboto, Ari
 .p-top .t { font-size: 17px; font-weight: 600; flex: 1; }
 .lab { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; color: var(--label); }
 .hv { font-size: 17px; text-align: right; }
-.strip { position: relative; height: 123px; background-size: cover; }
+.strip { position: relative; height: 141px; background-size: cover; background-position: center; }
 .strip .prim { position: absolute; left: 14px; bottom: 22px; right: 14px; }
 .strip .name { font-size: 30px; line-height: 1.1; font-weight: 400; }
 .rows { padding: 12px 14px 0; }
@@ -122,7 +123,8 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ deviceScaleFactor: 2 });
 await page.setViewportSize({ width: 1125, height: 369 });
 await page.setContent(`<body style="margin:0">${STRIP}</body>`);
-const strip = `data:image/png;base64,${(await page.screenshot()).toString('base64')}`;
+const strip = realStrip ? `data:image/png;base64,${readFileSync(realStrip).toString('base64')}`
+  : `data:image/png;base64,${(await page.screenshot()).toString('base64')}`;
 writeFileSync(`${out}/proposed-strip.png`, Buffer.from(strip.split(',')[1], 'base64'));
 
 const col = (tag, html, title, note) => `<div class="col"><span class="tag${tag === 'Proposed' ? ' new' : ''}">${tag}</span>${html}<div class="caption">${title}<small>${note}</small></div></div>`;

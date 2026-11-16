@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.1.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.2.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -431,6 +431,16 @@ function qrDownloadButton(entry, format, label, cls = 'btn') {
 
 const PHOTO_SIZE = 360; // the saved photo is a small square JPEG so it travels with the card
 
+async function logoPng(file, size = 300) {
+  const img = await loadImage(URL.createObjectURL(file));
+  const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const scale = Math.min(size / img.naturalWidth, size / img.naturalHeight);
+  const w = img.naturalWidth * scale, hgt = img.naturalHeight * scale;
+  canvas.getContext('2d').drawImage(img, (size - w) / 2, (size - hgt) / 2, w, hgt);
+  URL.revokeObjectURL(img.src);
+  return canvas.toDataURL('image/png');
+}
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -778,6 +788,7 @@ function editorScreen(id) {
   card.phones = card.phones || [];
   card.whatsapp = card.whatsapp || '';
   card.department = card.department || '';
+  card.logo = card.logo || '';
   card.whatsappMessage = card.whatsappMessage || '';
   card.ar = { ...(card.ar || {}) };
   let previewLang = 'en';
@@ -815,6 +826,21 @@ function editorScreen(id) {
       } catch (err) { toast(err.message); }
     },
   });
+  // Company logo for the wallet passes: any picture is fitted into a 300 × 300 PNG.
+  const logoInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try { card.logo = await logoPng(file); drawLogoRow(); } catch (err) { toast(err.message); }
+  } });
+  const logoRow = h('div', { class: 'row wrap' });
+  const drawLogoRow = () => logoRow.replaceChildren(...[
+    logoInput,
+    card.logo && h('img', { class: 'logo-preview', src: card.logo, alt: 'Logo' }),
+    h('button', { class: 'btn small', type: 'button', onclick: () => logoInput.click() }, card.logo ? 'Change logo' : 'Add company logo'),
+    card.logo && h('button', { class: 'btn small danger', type: 'button', onclick: () => { card.logo = ''; drawLogoRow(); } }, 'Remove'),
+  ].filter(Boolean));
+  drawLogoRow();
   // The full picture is kept while this screen is open, so the photo can be re-positioned without picking it again.
   let original = null;
   const framePhoto = async () => {
@@ -967,6 +993,7 @@ function editorScreen(id) {
         input('Job title', 'title', { autocomplete: 'organization-title', maxlength: 80 }),
         input('Company', 'company', { autocomplete: 'organization', maxlength: 80 })),
       input('Department (optional)', 'department', { maxlength: 80, placeholder: 'e.g. Group Procurement' }),
+      h('div', { class: 'field' }, h('span', {}, 'Company logo (optional, shown on wallet passes)'), logoRow),
       input('Short bio', 'bio', { rows: 3, maxlength: 400 })),
     h('section', { class: 'glass panel stack', dir: 'ltr' }, h('h2', {}, 'Arabic version (optional)'),
       h('p', { class: 'muted small' }, 'Fill these in Arabic and your card page gets an العربية switch. Visitors whose phone is set to Arabic see the Arabic version first. Phone numbers, emails and links are shared by both versions.'),
@@ -1507,6 +1534,21 @@ function orgSettingsSheet(info, reload) {
     const field = (label, key, attrs = {}) => h('label', { class: 'field' }, h('span', {}, label),
       h(attrs.rows ? 'textarea' : 'input', { class: 'input', value: s[key] || '', ...attrs, oninput: (e) => { s[key] = e.target.value; } }));
     const name = h('input', { class: 'input', value: info.name, maxlength: 80 });
+    const orgLogoInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try { const res = await api('/org/logo', { method: 'PUT', body: { logo: await logoPng(file) } }); s.logo = res.logo; info.settings.logo = res.logo; drawOrgLogo(); toast('Logo saved'); }
+      catch (err) { toast(err.message); }
+    } });
+    const orgLogoRow = h('div', { class: 'row wrap' });
+    const drawOrgLogo = () => orgLogoRow.replaceChildren(...[orgLogoInput,
+      s.logo && h('img', { class: 'logo-preview', src: s.logo, alt: 'Logo' }),
+      h('button', { class: 'btn small', type: 'button', onclick: () => orgLogoInput.click() }, s.logo ? 'Change logo' : 'Upload logo'),
+      s.logo && h('button', { class: 'btn small danger', type: 'button', onclick: async () => {
+        try { await api('/org/logo', { method: 'PUT', body: { logo: '' } }); s.logo = ''; info.settings.logo = ''; drawOrgLogo(); } catch (err) { toast(err.message); }
+      } }, 'Remove')].filter(Boolean));
+    drawOrgLogo();
     const swatches = h('div', { class: 'swatches' });
     const draw = () => swatches.replaceChildren(...COLOURS.map(([c, n]) => h('button', { class: 'swatch', type: 'button', style: `background:${c}`, title: n, 'aria-label': n,
       'aria-pressed': String(s.accent === c), onclick: () => { s.accent = c; draw(); } })));
@@ -1515,6 +1557,7 @@ function orgSettingsSheet(info, reload) {
       h('h1', {}, 'Company settings'),
       h('label', { class: 'field' }, h('span', {}, 'Company name'), name),
       h('div', { class: 'field' }, h('span', {}, 'Colour for new people\'s cards'), swatches),
+      h('div', { class: 'field' }, h('span', {}, 'Company logo (on everyone\'s wallet passes unless a card has its own)'), orgLogoRow),
       h('h2', {}, 'When someone leaves'),
       field('Message on their card', 'leftMessage', { rows: 3, maxlength: 400, placeholder: info.defaultMessage }),
       h('p', { class: 'small muted' }, '{name} and {company} are filled in automatically. Visitors also see the contact details below.'),

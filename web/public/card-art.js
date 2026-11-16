@@ -1,5 +1,7 @@
 // Pictures drawn from a card in the browser when it is saved:
 //   og    1200×630 JPEG  — the image shown in link previews (WhatsApp, LinkedIn, iMessage…)
+//   strip  750×288 PNG   — the banner across the top of the Apple Wallet pass (store-card layout)
+//   hero  1032×336 JPEG  — the same banner at the bottom of the Google Wallet pass
 // Drawing here, not on the server, means every language renders with the phone's own fonts.
 // The look follows the card page: a deep shade of the card's colour, a round photo with a fine gold ring,
 // the name in a serif face and the company as a small spaced heading.
@@ -7,7 +9,7 @@
 const SANS = '-apple-system, "SF Pro Display", "Segoe UI", Roboto, "Noto Sans", "Noto Sans Arabic", "Helvetica Neue", Arial, sans-serif';
 const SERIF = '"New York", "Iowan Old Style", "Palatino Linotype", Georgia, "Noto Naskh Arabic", "Times New Roman", serif';
 
-export const ART_VERSION = Date.UTC(2026, 10, 16, 12); // raise when the designs change, so saved cards are redrawn
+export const ART_VERSION = Date.UTC(2026, 10, 17, 10); // raise when the designs change, so saved cards are redrawn
 
 // ---------- card colours (shared with the page) ----------
 
@@ -49,6 +51,8 @@ export async function drawCardArt(card, link) {
   const photo = card.photo ? await loadImage(card.photo).catch(() => null) : null;
   return {
     og: drawPreview(card, link, photo).toDataURL('image/jpeg', 0.9),
+    strip: drawBanner(card, 750, 288).toDataURL('image/png'),
+    hero: drawBanner(card, 1032, 336).toDataURL('image/jpeg', 0.9),
   };
 }
 
@@ -97,6 +101,47 @@ function drawPreview(card, link, photo) {
   ctx.fillText(fit(ctx, label, pillW - 52), pillX + 26, pillY + 26);
   ctx.textBaseline = 'alphabetic';
   text(ctx, 'MK CARDS', 48 + 70, H - 48 - 58, size, `600 17px ${SANS}`, 20, 1, 'rgba(255,255,255,.5)', 'left', 5, true);
+  return canvas;
+}
+
+// The wallet banner: frosted glass in the card's colours, a fine gold edge and a gold rule, and the holder's
+// initials as a large, faint gold watermark on the right. The wallet writes the name over it.
+function drawBanner(card, W, H) {
+  const { canvas, ctx } = surface(W, H);
+  const t = cardTheme(card);
+  ctx.fillStyle = mixHex(t.deep, t.a, 0.3);
+  ctx.fillRect(0, 0, W, H);
+  if (card.style !== 'solid') {
+    glowAt(ctx, 0, 0, W * 0.8, rgba(t.haze, 0.55));
+    glowAt(ctx, W, H, W * 0.75, rgba(t.a, 0.45));
+  }
+  const shade = ctx.createLinearGradient(0, 0, 0, H);
+  shade.addColorStop(0, 'rgba(255,255,255,.08)');
+  shade.addColorStop(0.45, 'rgba(255,255,255,0)');
+  shade.addColorStop(1, 'rgba(0,0,0,.18)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, W, H);
+  // Watermark initials.
+  ctx.save();
+  ctx.font = `700 ${Math.round(H * 0.82)}px ${SERIF}`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = rgba(t.hi, 0.1);
+  ctx.fillText(initials(card.name), W + H * 0.1, H * 0.8);
+  ctx.restore();
+  // Gold edge along the top and a gold rule near the bottom, fading out to the right.
+  const edge = ctx.createLinearGradient(0, 0, W, 0);
+  edge.addColorStop(0, 'rgba(0,0,0,0)');
+  edge.addColorStop(0.5, rgba(mixHex(t.hi, '#ffffff', 0.3), 0.9));
+  edge.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = edge;
+  ctx.fillRect(0, 0, W, Math.max(2, H / 120));
+  const rule = ctx.createLinearGradient(W * 0.05, 0, W * 0.9, 0);
+  rule.addColorStop(0, mixHex(t.hi, '#ffffff', 0.25));
+  rule.addColorStop(0.55, t.hi);
+  rule.addColorStop(1, rgba(t.hi, 0));
+  ctx.fillStyle = rule;
+  ctx.fillRect(W * 0.05, H - H * 0.12, W * 0.85, Math.max(2, H / 110));
   return canvas;
 }
 

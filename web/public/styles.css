@@ -435,3 +435,5 @@ body.wide #app { max-width: 1120px; }
 .member-cards { display: grid; gap: 8px; border-top: 1px solid var(--hairline); padding-top: 10px; }
 .member-card { flex-wrap: wrap; }
 .linkbox.big { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; font-family: ui-monospace, Menlo, monospace; }
+
+.logo-preview { width: 46px; height: 46px; object-fit: contain; border-radius: 10px; background: #fff; border: 1px solid var(--hairline); padding: 4px; }

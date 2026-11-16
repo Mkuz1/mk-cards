@@ -225,6 +225,7 @@ async function api(request, env, url) {
   if (path === '/org' && method === 'POST') return createOrg(request, env);
   if (path === '/org' && method === 'PUT') return updateOrg(request, env);
   if (path === '/org/import' && method === 'POST') return importMembers(request, env, url);
+  if (path === '/org/logo' && method === 'PUT') return setOrgLogo(request, env);
   if (path === '/org/members.csv' && method === 'GET') return membersCsv(request, env, url);
   if (path === '/org/activity.csv' && method === 'GET') return activityCsv(request, env, url, true);
 
@@ -674,6 +675,7 @@ const ORG_SETTINGS = { accent: 7, leftMessage: 400, contactEmail: 120, contactPh
 function cleanOrgSettings(input) {
   const out = {};
   for (const [key, max] of Object.entries(ORG_SETTINGS)) out[key] = text(input && input[key], max);
+  out.logo = input && MEDIA_PATH.test(input.logo || '') ? input.logo : '';
   if (!/^#[0-9a-f]{6}$/i.test(out.accent)) out.accent = '#2a5ba8';
   if (out.website) out.website = safeUrl(out.website);
   return out;
@@ -700,8 +702,29 @@ async function updateOrg(request, env) {
   const body = await readJson(request);
   const name = text(body.name, 80);
   if (!name) throw new HttpError(400, 'Enter the company name.');
-  await env.DB.prepare('UPDATE orgs SET name = ?, data = ? WHERE id = ?').bind(name, JSON.stringify(cleanOrgSettings(body.settings)), user.org_id).run();
+  const before = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(user.org_id).first();
+  const settings = { ...cleanOrgSettings(body.settings), logo: JSON.parse(before.data || '{}').logo || '' };
+  await env.DB.prepare('UPDATE orgs SET name = ?, data = ? WHERE id = ?').bind(name, JSON.stringify(settings), user.org_id).run();
   return json({ ok: true });
+}
+
+// The company logo: shown on members' wallet passes when their card has no logo of its own.
+async function setOrgLogo(request, env) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const body = await readJson(request);
+  const org = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(user.org_id).first();
+  const settings = JSON.parse(org.data || '{}');
+  if (body.logo) {
+    const image = parseImage(body.logo, 'logo');
+    if (!image) throw new HttpError(400, 'That logo could not be used. Try a PNG or JPEG under 300 KB.');
+    settings.logo = await replaceMedia(env, user.id, `org:${user.org_id}`, 'logo', image);
+  } else {
+    await env.DB.prepare("DELETE FROM media WHERE card_id = ? AND kind = 'logo'").bind(`org:${user.org_id}`).run();
+    settings.logo = '';
+  }
+  await env.DB.prepare('UPDATE orgs SET data = ? WHERE id = ?').bind(JSON.stringify(settings), user.org_id).run();
+  return json({ logo: settings.logo });
 }
 
 async function orgMembers(env, orgId) {
@@ -915,6 +938,8 @@ const MEDIA_RULES = {
   og: { types: ['image/jpeg'], max: 400_000 },
   hero: { types: ['image/jpeg'], max: 300_000 },
   thumb: { types: ['image/png'], max: 250_000 },
+  strip: { types: ['image/png'], max: 700_000 },
+  logo: { types: ['image/png'], max: 300_000 },
 };
 
 function parseImage(dataUrl, kind) {
@@ -937,17 +962,20 @@ async function replaceMedia(env, userId, cardId, kind, image) {
 
 // The editor sends a new photo as a data: URL, or the address of the photo the card already has.
 async function keepPhoto(env, userId, cardId, card) {
-  if (card.photo.startsWith('data:')) {
-    const image = parseImage(card.photo, 'photo');
-    if (!image) throw new HttpError(400, 'That photo could not be used. Try another one.');
-    card.photo = await replaceMedia(env, userId, cardId, 'photo', image);
-    return;
-  }
-  const m = MEDIA_PATH.exec(card.photo);
-  const owned = m && await env.DB.prepare("SELECT 1 FROM media WHERE id = ? AND card_id = ? AND kind = 'photo'").bind(m[1], cardId).first();
-  if (!owned) {
-    card.photo = '';
-    await env.DB.prepare("DELETE FROM media WHERE card_id = ? AND kind = 'photo'").bind(cardId).run();
+  for (const kind of ['photo', 'logo']) {
+    const value = card[kind] || '';
+    if (value.startsWith('data:')) {
+      const image = parseImage(value, kind);
+      if (!image) throw new HttpError(400, kind === 'logo' ? 'That logo could not be used. Try a PNG or JPEG under 300 KB.' : 'That photo could not be used. Try another one.');
+      card[kind] = await replaceMedia(env, userId, cardId, kind, image);
+      continue;
+    }
+    const m = MEDIA_PATH.exec(value);
+    const owned = m && await env.DB.prepare('SELECT 1 FROM media WHERE id = ? AND card_id = ? AND kind = ?').bind(m[1], cardId, kind).first();
+    if (!owned) {
+      card[kind] = '';
+      await env.DB.prepare('DELETE FROM media WHERE card_id = ? AND kind = ?').bind(cardId, kind).run();
+    }
   }
 }
 
@@ -956,7 +984,7 @@ async function saveCardAssets(request, env, id) {
   const row = await ownCard(request, env, id);
   const body = await readJson(request, 1_200_000);
   const saved = {};
-  for (const kind of ['og', 'thumb', 'hero']) {
+  for (const kind of ['og', 'thumb', 'hero', 'strip']) {
     if (body[kind] == null) continue;
     const image = parseImage(body[kind], kind);
     if (!image) throw new HttpError(400, `The ${kind} picture could not be used.`);
@@ -1008,12 +1036,21 @@ async function walletPass(request, env, url, id, kind) {
   const card = readCard(row.data);
   const link = `${url.origin}/${user.username}${row.slug ? '/' + row.slug : ''}`;
   const ready = walletStatus(env);
+  // The banner drawn from the card, and the card's own logo or else the company's.
+  const media = await cardMedia(env, id);
+  let logoPath = card.logo;
+  if (!logoPath && user.org_id) {
+    const org = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(user.org_id).first();
+    logoPath = (org && JSON.parse(org.data || '{}').logo) || '';
+  }
 
   if (kind === 'apple.pkpass') {
     if (!ready.apple) throw new HttpError(503, 'Apple Wallet passes are not set up yet.');
     let file;
     try {
-      file = await applePass(env, { cardId: id, card, link });
+      const strip = media.strip ? (await mediaBytes(env, media.strip.path)).bytes : null;
+      const logo = logoPath ? (await mediaBytes(env, logoPath))?.bytes : null;
+      file = await applePass(env, { cardId: id, card, link, strip, logo });
     } catch (err) {
       console.error('Apple pass failed', err);
       throw new HttpError(503, 'The Apple Wallet pass could not be made. The Apple certificate needs checking.');
@@ -1027,7 +1064,8 @@ async function walletPass(request, env, url, id, kind) {
     });
   }
   if (!ready.google) throw new HttpError(503, 'Google Wallet passes are not set up yet.');
-  const save = await googleSaveUrl(env, { cardId: id, card, link, origin: url.origin });
+  const save = await googleSaveUrl(env, { cardId: id, card, link, origin: url.origin,
+    hero: media.hero && media.hero.path, logo: logoPath });
   return new Response(null, { status: 302, headers: { location: save, 'cache-control': 'private, no-store' } });
 }
 
@@ -1259,6 +1297,7 @@ function cleanCard(input) {
     website: safeUrl(input.website),
     address: text(input.address, 160),
     photo: '',
+    logo: '',
     accent: /^#[0-9a-f]{6}$/i.test(input.accent || '') ? input.accent.toLowerCase() : '#2a5ba8',
     style: STYLES.has(input.style) ? input.style : 'aurora',
     links: [],
@@ -1275,9 +1314,9 @@ function cleanCard(input) {
   for (const entry of card.emails) {
     if (!isEmail(entry.value)) throw new HttpError(400, `"${entry.value}" does not look like an email address.`);
   }
-  // A new photo (data: URL) or the card's current photo address; keepPhoto() checks and stores it.
-  if (typeof input.photo === 'string' && (input.photo.startsWith('data:') || MEDIA_PATH.test(input.photo))) {
-    card.photo = input.photo;
+  // A new photo or logo (data: URL) or the card's current address for it; keepPhoto() checks and stores it.
+  for (const kind of ['photo', 'logo']) {
+    if (typeof input[kind] === 'string' && (input[kind].startsWith('data:') || MEDIA_PATH.test(input[kind]))) card[kind] = input[kind];
   }
   if (Array.isArray(input.links)) {
     for (const link of input.links.slice(0, 12)) {
@@ -1325,6 +1364,7 @@ function upgradeCard(card) {
   if (typeof card.label !== 'string') card.label = '';
   if (typeof card.whatsapp !== 'string') card.whatsapp = '';
   if (typeof card.department !== 'string') card.department = '';
+  if (typeof card.logo !== 'string') card.logo = '';
   if (typeof card.whatsappMessage !== 'string') card.whatsappMessage = '';
   if (!card.ar || typeof card.ar !== 'object') card.ar = {};
   return card;

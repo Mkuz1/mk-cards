@@ -71,7 +71,7 @@ const asset = (path) => Uint8Array.from(atob(ASSETS[path].base64), (ch) => ch.ch
 
 /** Builds a signed .pkpass file: a clean business card with no photo, the company at the top and
  * "MK Cards" in small print under the QR code. */
-export async function applePass(env, { cardId, card, link }) {
+export async function applePass(env, { cardId, card, link, strip, logo }) {
   const cert = forge.pki.certificateFromPem(pem(env.APPLE_PASS_CERT));
   const key = forge.pki.privateKeyFromPem(pem(env.APPLE_PASS_KEY));
   // The certificate itself names the pass type (UID) and the developer team (OU).
@@ -122,7 +122,8 @@ export async function applePass(env, { cardId, card, link }) {
     foregroundColor: 'rgb(255,255,255)',
     backgroundColor: rgb(colours.background),
     labelColor: rgb(colours.label),
-    generic: {
+    // The store-card layout: a designed banner (strip) across the top with the name over it.
+    storeCard: {
       headerFields: card.label ? [field('label', 'CARD', card.label)] : [],
       primaryFields: [field('name', (card.title || 'Business card').toUpperCase(), card.name)],
       secondaryFields: secondary,
@@ -140,6 +141,8 @@ export async function applePass(env, { cardId, card, link }) {
     'icon@2x.png': asset('/wallet/icon@2x.png'),
     'icon@3x.png': asset('/wallet/icon@3x.png'),
   };
+  if (strip) for (const name of ['strip.png', 'strip@2x.png', 'strip@3x.png']) files[name] = strip;
+  if (logo) for (const name of ['logo.png', 'logo@2x.png', 'logo@3x.png']) files[name] = logo;
 
   const manifest = {};
   for (const [name, data] of Object.entries(files)) {
@@ -194,7 +197,7 @@ function googleClass(issuer) {
   };
 }
 
-function googleObject(issuer, { cardId, card, link }) {
+function googleObject(issuer, { cardId, card, link, origin, hero, logo }) {
   const phones = card.phones || [];
   const emails = card.emails || [];
   const phoneLabel = (p) => ({ mobile: 'Mobile', work: 'Office', home: 'Home' })[p.label] || 'Phone';
@@ -215,6 +218,8 @@ function googleObject(issuer, { cardId, card, link }) {
     subheader: text(card.title || 'Business card'),
     header: text(card.name),
     hexBackgroundColor: passColours(card).hex,
+    ...(logo ? { logo: { sourceUri: { uri: origin + logo }, contentDescription: text(card.company || 'Logo') } } : {}),
+    ...(hero ? { heroImage: { sourceUri: { uri: origin + hero }, contentDescription: text(card.name) } } : {}),
     textModulesData: [
       phones[0] && { id: 'phone', header: phoneLabel(phones[0]), body: phones[0].value },
       second,

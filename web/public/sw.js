@@ -1,6 +1,6 @@
 // MK Cards service worker. Bump VERSION on every release (keep in step with APP_VERSION in app.js):
 // a changed file is what makes browsers show the "new version is ready" notice.
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const CACHE = `mk-cards-${VERSION}`;
 const SHELL = ['/', '/styles.css', '/app.js', '/card-art.js', '/vendor/qrcode.js', '/manifest.webmanifest', '/icons/favicon-32.png', '/icons/icon-192.png'];
 
