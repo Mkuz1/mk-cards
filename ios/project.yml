@@ -19,6 +19,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.mkcards
+        DEVELOPMENT_TEAM: 5TB6PWV9UN
         PRODUCT_NAME: MK Cards
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
