@@ -1,0 +1,205 @@
+// Renders preview images of the Apple Wallet and Google Wallet passes, using the same colours, fields and QR
+// contents the server puts in real passes. Run: node scripts/wallet-mockups.mjs <pictures-dir> <out-dir>
+// <pictures-dir> holds art-<n>-thumb.png and art-<n>-hero.jpg drawn by card-art.js for each sample.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { passColours, qrVCard } from '../src/wallet.js';
+
+const require = createRequire(import.meta.url);
+const { chromium } = require('playwright');
+const [art, out] = process.argv.slice(2);
+const qrLib = readFileSync(new URL('../public/vendor/qrcode.js', import.meta.url), 'utf8');
+
+const samples = [
+  {
+    slug: 'mohamad', label: '',
+    card: { name: 'محمد القلموني', title: 'Founder & CEO', company: 'Qalamoun Group', accent: '#5b8cff', style: 'aurora',
+      phones: [{ label: 'mobile', value: '+971 50 111 2222' }, { label: 'work', value: '+963 11 222 3333' }],
+      emails: [{ label: 'work', value: 'mohamad@qalamoun.example' }], website: 'https://qalamoun.example', whatsapp: '+971501112222' },
+  },
+  {
+    slug: 'sara', label: 'Work',
+    card: { name: 'Sara Haddad', title: 'Senior Architect', company: 'Atelier Nour', accent: '#e0559a', style: 'aurora',
+      phones: [{ label: 'mobile', value: '+961 3 555 120' }], emails: [{ label: 'work', value: 'sara@ateliernour.example' }],
+      website: 'https://ateliernour.example' },
+  },
+  {
+    slug: 'omar', label: '',
+    card: { name: 'Omar Said', title: 'Head of Sales', company: 'Said & Co', accent: '#1fa97a', style: 'solid',
+      phones: [{ label: 'mobile', value: '+966 55 010 2030' }], emails: [{ label: 'work', value: 'omar@saidco.example' }] },
+  },
+];
+
+const dataUri = (file, type) => `data:${type};base64,${readFileSync(file).toString('base64')}`;
+const logoWhite = dataUri(new URL('../public/wallet/logo@3x.png', import.meta.url), 'image/png');
+const googleLogo = dataUri(new URL('../public/wallet/google-logo.png', import.meta.url), 'image/png');
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const rgb = (c) => `rgb(${c.join(',')})`;
+
+function applePass(s, i) {
+  const { card } = s;
+  const c = passColours(card);
+  const secondary = [card.company && ['COMPANY', card.company], card.phones[0] && ['PHONE', card.phones[0].value]].filter(Boolean);
+  const auxiliary = card.emails[0] ? [['EMAIL', card.emails[0].value]] : [];
+  const row = (fields) => `<div class="a-row">${fields.map(([l, v]) => `<div class="a-field"><div class="a-label">${l}</div><div class="a-value" dir="auto">${esc(v)}</div></div>`).join('')}</div>`;
+  return `<div class="apple-pass" style="background:${rgb(c.background)};--label:${rgb(c.label)}">
+    <div class="a-top"><img class="a-logo" src="${logoWhite}"><span class="a-logotext">MK Cards</span>
+      ${s.label ? `<div class="a-header"><div class="a-label">CARD</div><div class="a-hvalue">${esc(s.label)}</div></div>` : ''}</div>
+    <div class="a-primary"><div><div class="a-label">${esc((card.title || 'Business card').toUpperCase())}</div>
+      <div class="a-name" dir="auto">${esc(card.name)}</div></div>
+      <img class="a-thumb" src="${dataUri(`${art}/art-${i}-thumb.png`, 'image/png')}"></div>
+    ${row(secondary)}${auxiliary.length ? row(auxiliary) : ''}
+    <div class="a-barcode"><div class="qr" data-text="${encodeURIComponent(qrVCard(card, `https://mkcards.pages.dev/${s.slug}`))}"></div>
+      <div class="a-alt">Scan to save contact</div></div>
+    <div class="a-info">i</div>
+  </div>`;
+}
+
+function appleBack(s) {
+  const { card } = s;
+  const link = `https://mkcards.pages.dev/${s.slug}`;
+  const rows = [
+    ...card.phones.map((p) => [`${p.label.toUpperCase()} PHONE`, `<a>${esc(p.value)}</a>`]),
+    ...card.emails.map((e) => [`${e.label.toUpperCase()} EMAIL`, `<a>${esc(e.value)}</a>`]),
+    card.whatsapp && ['WHATSAPP', `<a>${esc(card.whatsapp)}</a>`],
+    card.website && ['WEBSITE', `<a>${esc(card.website)}</a>`],
+    ['MY MK CARD', `<a>${link.replace('https://', '')}</a>`],
+    ['SAVE THIS CONTACT', 'Scan the QR code on the front with any phone camera to add this contact.'],
+  ].filter(Boolean);
+  return `<div class="apple-back"><div class="ab-title">Pass Details</div>
+    <div class="ab-group"><div class="ab-row"><span>Automatic Updates</span><span class="toggle"></span></div>
+    <div class="ab-row"><span>Show On Lock Screen</span><span class="toggle"></span></div></div>
+    <div class="ab-group">${rows.map(([l, v]) => `<div class="ab-field"><div class="ab-label">${l}</div><div class="ab-value">${v}</div></div>`).join('')}</div>
+    <div class="ab-remove">Remove Pass</div></div>`;
+}
+
+function googlePass(s, i) {
+  const { card } = s;
+  const c = passColours(card);
+  return `<div class="g-pass" style="background:${c.hex}">
+    <div class="g-top"><img class="g-logo" src="${googleLogo}"><span>MK Cards</span></div>
+    <div class="g-body">
+      <div class="g-sub" dir="auto">${esc([card.title, card.company].filter(Boolean).join(' · '))}</div>
+      <div class="g-head" dir="auto">${esc(card.name)}</div>
+      ${card.phones[0] ? `<div class="g-row"><div><div class="g-label">Phone</div><div class="g-val">${esc(card.phones[0].value)}</div></div></div>` : ''}
+      ${card.emails[0] ? `<div class="g-row g-row-tight"><div><div class="g-label">Email</div><div class="g-val">${esc(card.emails[0].value)}</div></div></div>` : ''}
+      <div class="g-barcode"><div class="qr" data-text="${encodeURIComponent(qrVCard(card, `https://mkcards.pages.dev/${s.slug}`))}"></div>
+        <div class="g-alt">Scan to save contact</div></div>
+    </div>
+    <img class="g-hero" src="${dataUri(`${art}/art-${i}-hero.jpg`, 'image/jpeg')}">
+  </div>`;
+}
+
+const phone = (title, body, dark = true) => `<div class="phone ${dark ? 'dark' : 'light'}">
+  <div class="status"><span>9:41</span><span class="island"></span><span class="sys"><i></i><i></i><i></i><i></i><b></b></span></div>
+  <div class="app-title">${title}</div>${body}</div>`;
+
+const CSS = `
+* { box-sizing: border-box; margin: 0; }
+body { font-family: -apple-system, "SF Pro Text", Inter, "Segoe UI", Roboto, "Noto Sans Arabic", Arial, sans-serif; background: #e9ecf3; }
+.sheet { display: flex; gap: 40px; padding: 48px; align-items: flex-start; flex-wrap: wrap; width: max-content; }
+.col { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.caption { font: 600 17px/1.3 inherit; color: #2a3044; text-align: center; max-width: 393px; }
+.caption small { display: block; font-weight: 500; color: #69708a; margin-top: 4px; }
+.phone { width: 393px; height: 852px; border-radius: 56px; padding: 0 16px; overflow: hidden; position: relative;
+  box-shadow: 0 0 0 10px #111, 0 0 0 12px #3a3d45, 0 40px 80px -30px rgba(0,0,0,.6); }
+.phone.dark { background: #000; color: #fff; }
+.phone.light { background: #f2f2f6; color: #111; }
+.status { display: flex; justify-content: space-between; align-items: center; height: 54px; padding: 0 20px; font-weight: 600; font-size: 16px; }
+.sys { display: flex; align-items: flex-end; gap: 2px; }
+.sys i { display: block; width: 3px; background: currentColor; border-radius: 1px; }
+.sys i:nth-child(1) { height: 5px; } .sys i:nth-child(2) { height: 7px; } .sys i:nth-child(3) { height: 9px; } .sys i:nth-child(4) { height: 11px; }
+.sys b { display: block; width: 24px; height: 12px; border: 1.5px solid currentColor; border-radius: 4px; margin-left: 6px; box-shadow: inset 0 0 0 2px transparent; background: linear-gradient(90deg, currentColor 80%, transparent 80%) content-box; padding: 1px; }
+.island { width: 120px; height: 34px; border-radius: 20px; background: #000; }
+.light .island { background: #000; }
+.app-title { font-size: 32px; font-weight: 800; margin: 8px 6px 16px; letter-spacing: -.01em; }
+
+/* Apple Wallet generic pass */
+.apple-pass { position: relative; border-radius: 14px; padding: 12px 14px 16px; color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.12) inset; }
+.a-top { display: flex; align-items: center; gap: 8px; height: 40px; }
+.a-logo { height: 30px; }
+.a-logotext { font-size: 17px; font-weight: 600; flex: 1; }
+.a-header { text-align: right; }
+.a-hvalue { font-size: 17px; }
+.a-label { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; color: var(--label); }
+.a-primary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 18px; }
+.a-name { font-size: 26px; font-weight: 400; line-height: 1.15; margin-top: 2px; }
+.a-thumb { width: 90px; height: 90px; flex: none; }
+.a-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.a-field:last-child:not(:first-child) { text-align: right; }
+.a-value { font-size: 16px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+.a-barcode { background: #fff; color: #000; border-radius: 8px; width: 180px; margin: 26px auto 0; padding: 12px 12px 8px; text-align: center; }
+.a-barcode .qr svg { width: 156px; height: 156px; display: block; }
+.a-alt { font-size: 11px; margin-top: 6px; }
+.a-info { position: absolute; right: 12px; bottom: 12px; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.85);
+  font: 600 13px/19px Georgia, serif; text-align: center; font-style: italic; }
+.stack-behind { height: 10px; margin: 0 8px; border-radius: 12px 12px 0 0; }
+
+/* Apple Wallet pass details */
+.apple-back { font-size: 15px; }
+.ab-title { font-size: 17px; font-weight: 600; text-align: center; margin-bottom: 14px; }
+.ab-group { background: #1c1c1e; border-radius: 12px; padding: 0 14px; margin-bottom: 18px; }
+.ab-row { display: flex; justify-content: space-between; align-items: center; height: 46px; border-bottom: .5px solid #38383a; }
+.ab-row:last-child { border: 0; }
+.toggle { width: 50px; height: 30px; border-radius: 15px; background: #34c759; position: relative; }
+.toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 26px; height: 26px; border-radius: 50%; background: #fff; }
+.ab-field { padding: 9px 0; border-bottom: .5px solid #38383a; }
+.ab-field:last-child { border: 0; }
+.ab-label { font-size: 11px; color: #8e8e93; font-weight: 600; letter-spacing: .03em; }
+.ab-value { margin-top: 2px; line-height: 1.3; }
+.ab-value a { color: #0a84ff; }
+.ab-remove { text-align: center; color: #ff453a; background: #1c1c1e; border-radius: 12px; padding: 13px; }
+
+/* Google Wallet generic pass */
+.g-pass { border-radius: 24px; overflow: hidden; color: #fff; }
+.g-top { display: flex; align-items: center; gap: 10px; padding: 16px 18px 12px; font-size: 16px; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.18); }
+.g-logo { width: 32px; height: 32px; border-radius: 50%; }
+.g-body { padding: 14px 18px 18px; }
+.g-sub { font-size: 14px; opacity: .85; }
+.g-head { font-size: 26px; font-weight: 500; margin-top: 2px; }
+.g-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.g-row-tight { margin-top: 12px; }
+.g-label { font-size: 12px; opacity: .8; }
+.g-val { font-size: 15px; margin-top: 2px; }
+.g-barcode { background: #fff; color: #333; border-radius: 16px; width: 196px; margin: 22px auto 4px; padding: 14px 14px 8px; text-align: center; }
+.g-barcode .qr svg { width: 168px; height: 168px; display: block; }
+.g-alt { font-size: 12px; margin-top: 6px; }
+.g-hero { display: block; width: 100%; }
+`;
+
+const qrScript = `${qrLib}
+qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+for (const el of document.querySelectorAll('.qr')) {
+  const qr = qrcode(0, 'M'); qr.addData(decodeURIComponent(el.dataset.text)); qr.make();
+  const n = qr.getModuleCount(); let d = '';
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+  el.innerHTML = '<svg viewBox="0 0 ' + n + ' ' + n + '" shape-rendering="crispEdges"><path d="' + d + '"/></svg>';
+}`;
+
+const screens = [
+  { file: 'apple-wallet-front', caption: 'Apple Wallet — front', note: 'Photo, title and name; company, phone and email; QR that saves the contact',
+    html: phone('Wallet', `<div class="stack-behind" style="background:#2c2c2e"></div>${applePass(samples[0], 0)}`) },
+  { file: 'apple-wallet-details', caption: 'Apple Wallet — pass details', note: 'Every phone, email and link, all tappable',
+    html: phone('', appleBack(samples[0])) },
+  { file: 'google-wallet-front', caption: 'Google Wallet — front', note: 'Name, role, phone and email, QR, and the card banner',
+    html: phone('', googlePass(samples[0], 0), false) },
+  { file: 'apple-wallet-sara', caption: 'Apple Wallet — another colour', note: 'Pass colour follows each card; extra cards show their name (“Work”)',
+    html: phone('Wallet', `<div class="stack-behind" style="background:#2c2c2e"></div>${applePass(samples[1], 1)}`) },
+  { file: 'google-wallet-omar', caption: 'Google Wallet — another colour', note: 'Card with no photo uses initials',
+    html: phone('', googlePass(samples[2], 2), false) },
+];
+
+const browser = await chromium.launch();
+const page = await browser.newPage({ deviceScaleFactor: 2 });
+for (const s of screens) {
+  await page.setContent(`<style>${CSS}</style><div class="sheet"><div class="col">${s.html}<div class="caption">${s.caption}<small>${s.note}</small></div></div></div>`);
+  await page.addScriptTag({ content: qrScript });
+  await page.locator('.col').screenshot({ path: `${out}/${s.file}.png` });
+}
+await page.setContent(`<style>${CSS}</style><div class="sheet">${screens.map((s) => `<div class="col">${s.html}<div class="caption">${s.caption}<small>${s.note}</small></div></div>`).join('')}</div>`);
+await page.addScriptTag({ content: qrScript });
+await page.locator('.sheet').screenshot({ path: `${out}/wallet-cards-overview.png` });
+// The QR codes as they will appear, for a scan check.
+writeFileSync(`${out}/qr-texts.json`, JSON.stringify(samples.map((s) => qrVCard(s.card, `https://mkcards.pages.dev/${s.slug}`))));
+await browser.close();
+console.log('mockups written');

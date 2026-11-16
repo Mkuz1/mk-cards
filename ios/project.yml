@@ -1,0 +1,29 @@
+# Xcode project description for XcodeGen (https://github.com/yonaskolb/XcodeGen).
+# Build on a Mac with:  brew install xcodegen && xcodegen generate && open MKCards.xcodeproj
+name: MKCards
+options:
+  bundleIdPrefix: app.mkcards
+  deploymentTarget:
+    iOS: "15.0"
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+targets:
+  MKCards:
+    type: application
+    platform: iOS
+    sources:
+      - MKCards
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.mkcards
+        PRODUCT_NAME: MK Cards
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_FILE: MKCards/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        # The address of the MK Cards site this app shows.
+        MK_SITE_URL: https://mkcards.pages.dev

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same mark as the web icon (64-unit artwork), scaled into the 66dp safe zone of the 108dp canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="24" android:translateY="24" android:scaleX="0.9375" android:scaleY="0.9375">
+        <path android:pathData="M19,19h26a7,7 0,0 1,7 7v13a7,7 0,0 1,-7 7h-26a7,7 0,0 1,-7 -7v-13a7,7 0,0 1,7 -7z"
+            android:fillColor="#47FFFFFF" android:strokeColor="#CCFFFFFF" android:strokeWidth="1.5" />
+        <path android:pathData="M19,39V27l6.5,8 6.5,-8v12M38,27v12M38,33l7,-6M40.5,32l5,7"
+            android:strokeColor="#FFFFFF" android:strokeWidth="3"
+            android:strokeLineCap="round" android:strokeLineJoin="round" />
+    </group>
+</vector>

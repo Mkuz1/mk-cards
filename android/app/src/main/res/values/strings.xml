@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MK Cards</string>
+    <string name="share_chooser">Share card</string>
+    <string name="no_contacts_app">No contacts app is installed to open this card.</string>
+    <string name="no_app_for_link">No app can open this link.</string>
+    <string name="saved_to_downloads">Saved to Downloads</string>
+    <string name="save_chooser">Save QR code</string>
+</resources>

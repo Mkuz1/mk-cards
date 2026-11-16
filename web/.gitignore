@@ -1,0 +1,5 @@
+node_modules/
+.wrangler/
+.dev.vars
+src/assets.generated.js
+src/qrcode.generated.cjs

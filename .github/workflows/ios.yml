@@ -1,0 +1,59 @@
+# Builds the iPhone app on a GitHub Mac and publishes an unsigned IPA for sideloading
+# (Sideloadly or AltStore sign it with your Apple ID when installing).
+# The IPA appears under this run's "Artifacts" and on the ios-build branch.
+name: iOS app
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          xcodebuild -project MKCards.xcodeproj -scheme MKCards -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+          test -d "build/Build/Products/Release-iphoneos/MK Cards.app"
+
+      - name: Package the IPA
+        working-directory: ios
+        run: |
+          mkdir -p Payload
+          cp -R "build/Build/Products/Release-iphoneos/MK Cards.app" Payload/
+          zip -qry MKCards-unsigned.ipa Payload
+          ls -la MKCards-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MKCards-unsigned-ipa
+          path: ios/MKCards-unsigned.ipa
+
+      - name: Publish to the ios-build branch
+        run: |
+          mkdir out && cp ios/MKCards-unsigned.ipa out/
+          echo "Built from ${GITHUB_SHA} on $(date -u +%Y-%m-%dT%H:%M:%SZ)" > out/BUILD.txt
+          cd out
+          git init -q -b ios-build
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add . && git commit -qm "iOS build ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ios-build

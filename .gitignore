@@ -1,0 +1,18 @@
+# dependencies and build output
+node_modules/
+web/.wrangler/
+web/src/*.generated.*
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+ios/build/
+ios/*.xcodeproj/
+ios/Payload/
+*.ipa
+# local secrets and packaged downloads
+.dev.vars
+*.jks
+*.keystore
+*.key
+dist/
