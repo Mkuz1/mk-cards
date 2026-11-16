@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '1.8.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '1.9.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -49,6 +49,24 @@ const ICONS = {
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
 };
+
+// Solid icons for the card itself (as in the reference design); line icons everywhere else.
+const SOLID = {
+  phone: '<path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.4 0 .7-.2 1z"/>',
+  mail: '<path d="M20 4H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4-8 5-8-5V6l8 5 8-5z"/>',
+  pin: '<path d="M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>',
+  save: '<path d="M15 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2zm9 4c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/>',
+  whatsapp: '<path d="M12 2.2A9.8 9.8 0 0 0 3.6 17l-1.4 4.8 5-1.3A9.8 9.8 0 1 0 12 2.2zm5.7 13.8c-.2.7-1.4 1.300-2 1.400-.5.1-1.200.1-1.900-.1a17 17 0 0 1-1.700-.6c-3-1.300-4.900-4.300-5.100-4.500-.1-.2-1.200-1.600-1.200-3.100s.8-2.200 1.100-2.500c.3-.3.6-.4.8-.4h.6c.2 0 .4 0 .6.5l.9 2.100c.1.200.1.400 0 .5l-.3.5-.4.5c-.1.100-.3.300-.1.600.2.300.8 1.300 1.700 2.100 1.100 1 2.100 1.300 2.400 1.500.3.100.5.100.7-.1l.9-1.100c.2-.300.400-.200.700-.1l2 1c.3.1.5.2.5.3.1.2.1.700-.1 1.400z"/>',
+  globe: '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.9 6h-2.9a15.700 15.700 0 0 0-1.400-3.600A8 8 0 0 1 18.900 8zM12 4c.8 1.200 1.500 2.500 1.900 4h-3.800c.4-1.500 1.100-2.800 1.900-4zM4.300 14a8.200 8.200 0 0 1 0-4h3.400a16.500 16.500 0 0 0 0 4H4.300zm.8 2h2.900c.3 1.300.8 2.500 1.400 3.600A8 8 0 0 1 5.100 16zM8 8H5.100a8 8 0 0 1 4.300-3.600C8.800 5.500 8.400 6.700 8 8zm4 12c-.8-1.200-1.500-2.500-1.900-4h3.800c-.4 1.500-1.100 2.800-1.900 4zm2.300-6H9.700a14.700 14.700 0 0 1 0-4h4.600a14.700 14.700 0 0 1 0 4zm.3 5.600c.6-1.100 1.100-2.300 1.400-3.600h2.900a8 8 0 0 1-4.300 3.600zm1.800-5.600a16.500 16.500 0 0 0 0-4h3.400a8.200 8.200 0 0 1 0 4h-3.400z"/>',
+  link: '<path d="M3.900 12a3.100 3.100 0 0 1 3.100-3.100h4V7H7a5 5 0 0 0 0 10h4v-1.900H7A3.100 3.100 0 0 1 3.900 12zM8 13h8v-2H8v2zm9-6h-4v1.900h4a3.100 3.100 0 0 1 0 6.200h-4V17h4a5 5 0 0 0 0-10z"/>',
+};
+
+function solidIcon(name) {
+  if (!SOLID[name]) return icon(name);
+  const span = document.createElement('span');
+  span.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${SOLID[name]}</svg>`;
+  return span.firstChild;
+}
 
 function icon(name) {
   const span = document.createElement('span');
@@ -103,7 +121,12 @@ async function api(path, { method = 'GET', body } = {}) {
 
 // ---------- shared pieces ----------
 
-const ACCENTS = ['#5b8cff', '#7a5cff', '#e0559a', '#f0683c', '#e3a008', '#1fa97a', '#149fc4', '#3c4658'];
+const COLOURS = [
+  ['#2a5ba8', 'Midnight'], ['#5b8cff', 'Royal blue'], ['#7a5cff', 'Violet'], ['#e0559a', 'Rose'], ['#b8344f', 'Burgundy'],
+  ['#f0683c', 'Copper'], ['#e3a008', 'Amber'], ['#1fa97a', 'Emerald'], ['#149fc4', 'Teal'], ['#3c4658', 'Graphite'],
+];
+const ACCENTS = COLOURS.map(([value]) => value);
+const colourName = (value) => (COLOURS.find(([v]) => v === value) || [null, 'Custom'])[1];
 const LINK_TYPES = {
   website: 'Website', linkedin: 'LinkedIn', x: 'X', instagram: 'Instagram', facebook: 'Facebook',
   youtube: 'YouTube', tiktok: 'TikTok', github: 'GitHub', whatsapp: 'WhatsApp', telegram: 'Telegram',
@@ -130,10 +153,10 @@ function themeVars(card) {
   const t = cardTheme(card);
   const rgba = (c, alpha) => `rgba(${hexRgb(c).join(',')},${alpha})`;
   return [
-    `--deep:${t.deep}`, `--deep-top:${mixHex(t.deep, '#ffffff', 0.08)}`,
-    `--glow:${rgba(t.glow, 0.5)}`, `--tint:${rgba(t.a, 0.28)}`,
-    `--hi:${t.hi}`, `--hi-top:${mixHex(t.hi, '#ffffff', 0.25)}`, `--hi-bottom:${mixHex(t.hi, '#000000', 0.12)}`,
-    `--hi-glow:${rgba(t.hi, 0.5)}`, `--hi-ink:${mixHex(t.hi, '#000000', 0.82)}`,
+    `--deep:${t.deep}`, `--page:${t.page}`, `--glass-top:${t.glassTop}`, `--glass-bottom:${t.glassBottom}`,
+    `--haze:${rgba(t.haze, 0.74)}`, `--page-haze:${rgba(t.haze, 0.34)}`, `--tint:${rgba(t.a, 0.22)}`,
+    `--hi:${t.hi}`, `--hi-light:${mixHex(t.hi, '#ffffff', 0.45)}`, `--hi-top:${mixHex(t.hi, '#ffffff', 0.1)}`,
+    `--hi-bottom:${mixHex(t.hi, '#000000', 0.1)}`, `--hi-glow:${rgba(t.hi, 0.5)}`, `--hi-ink:${mixHex(t.hi, '#000000', 0.84)}`,
   ].join(';');
 }
 
@@ -169,7 +192,7 @@ function renderCard(card, { compact = false, actions = null } = {}) {
     class: `vc-action${extra.primary ? ' primary' : ''}`, href: live ? href : null, type: href ? null : 'button',
     target: href && /^https?:/.test(href) ? '_blank' : null, rel: 'noopener', tabindex: live ? null : '-1',
     onclick: extra.onclick || null,
-  }, icon(iconName), h('span', {}, label));
+  }, solidIcon(iconName), h('span', {}, label));
   const quick = [
     tile('save', 'Save contact', null, { primary: true, onclick: live ? actions.save : null }),
     card.whatsapp && tile('whatsapp', 'WhatsApp', waHref(card.whatsapp)),
@@ -190,7 +213,7 @@ function renderCard(card, { compact = false, actions = null } = {}) {
 
   const row = (iconName, label, value, href) => h(href ? 'a' : 'div', {
     class: 'vc-row', href, target: href && /^https?:/.test(href) ? '_blank' : null, rel: 'noopener',
-  }, h('span', { class: 'vc-ico' }, icon(iconName)),
+  }, h('span', { class: 'vc-ico' }, solidIcon(iconName)),
   h('span', { class: 'grow' }, h('small', {}, label), h('bdi', { class: value.length > 24 ? 'long' : null }, value)),
   href ? h('span', { class: 'vc-chev' }, icon('chevron')) : null);
   const groups = [
@@ -625,7 +648,7 @@ function editorScreen(id) {
     label: '', name: first ? first.name : '', title: '', company: first ? first.company : '', department: '', bio: '', whatsapp: '',
     phones: [{ label: 'mobile', value: '' }],
     emails: [{ label: 'work', value: first ? '' : me.user.email }],
-    website: '', address: '', photo: '', accent: ACCENTS[me.cards.length % ACCENTS.length], style: 'aurora', links: [],
+    website: '', address: '', photo: '', accent: first ? first.accent : ACCENTS[0], style: 'aurora', links: [],
   };
   card.phones = card.phones || [];
   card.whatsapp = card.whatsapp || '';
@@ -710,9 +733,13 @@ function editorScreen(id) {
 
   // Appearance
   const swatches = h('div', { class: 'swatches' });
-  const drawSwatches = () => swatches.replaceChildren(...ACCENTS.map((color) =>
-    h('button', { class: 'swatch', type: 'button', style: `background:${color}`, 'aria-label': `Colour ${color}`,
-      'aria-pressed': String(card.accent === color), onclick: () => { card.accent = color; drawSwatches(); refresh(); } })));
+  const colourLabel = h('p', { class: 'muted small' });
+  const drawSwatches = () => {
+    swatches.replaceChildren(...COLOURS.map(([color, name]) =>
+      h('button', { class: 'swatch', type: 'button', style: `background:${color}`, 'aria-label': name, title: name,
+        'aria-pressed': String(card.accent === color), onclick: () => { card.accent = color; drawSwatches(); refresh(); } })));
+    colourLabel.textContent = `Colour: ${colourName(card.accent)}`;
+  };
   drawSwatches();
   const styles = h('div', { class: 'segmented' });
   const drawStyles = () => styles.replaceChildren(...[['aurora', 'Aurora'], ['solid', 'Solid'], ['mono', 'Graphite']].map(([value, label]) =>
@@ -818,7 +845,7 @@ function editorScreen(id) {
         card.links.push({ type: 'linkedin', label: '', url: '' });
         drawLinks();
       } }, icon('plus'), 'Add a link')),
-    h('section', { class: 'glass panel stack' }, h('h2', {}, 'Look'), swatches, styles),
+    h('section', { class: 'glass panel stack' }, h('h2', {}, 'Look'), swatches, colourLabel, styles),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'Card address'), addressBox,
       addressNote && h('p', { class: 'muted small' }, addressNote)),
     errorLine,
@@ -937,6 +964,8 @@ function publicScreen(username, slug = '') {
     // The page takes on the card's colours, like the reference design: a deep backdrop with a soft glow.
     document.body.classList.add('card-page');
     document.body.setAttribute('style', themeVars(card));
+    // Paint the whole page, however long, not just the first screen (iPhones ignore fixed backgrounds).
+    document.documentElement.style.background = cardTheme(card).page;
     const saveContact = async () => {
       if (!native) { location.href = `/api/public/vcard?${query}`; return; }
       try {
@@ -1122,6 +1151,7 @@ function render() {
   const path = location.pathname.replace(/\/+$/, '') || '/';
   document.body.classList.remove('card-page');
   document.body.removeAttribute('style');
+  document.documentElement.style.background = '';
   document.title = 'MK Cards';
   let screen = missingScreen('That page does not exist.', 'Page not found');
   let tab = null;

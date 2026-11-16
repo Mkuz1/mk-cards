@@ -152,21 +152,26 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .vc { display: grid; gap: 14px; }
 .vc-glass {
   position: relative; border-radius: 30px; overflow: hidden;
+  /* Lighter at the top with a misty glow in the top-left corner, like frosted glass catching the light. */
   background:
-    radial-gradient(120% 70% at 0% 0%, var(--glow) 0%, transparent 62%),
+    radial-gradient(140% 85% at 0% 0%, var(--haze) 0%, transparent 55%),
     radial-gradient(90% 60% at 100% 100%, var(--tint) 0%, transparent 70%),
-    linear-gradient(180deg, var(--deep-top), var(--deep));
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 30px 60px -30px rgba(0, 0, 0, 0.65);
+    linear-gradient(180deg, var(--glass-top), var(--glass-bottom));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 30px 60px -30px rgba(0, 0, 0, 0.7);
 }
-.vc.solid .vc-glass, .vc-mini.solid { background: linear-gradient(180deg, var(--deep-top), var(--deep)); }
+.vc.solid .vc-glass, .vc-mini.solid { background: linear-gradient(180deg, var(--glass-top), var(--glass-bottom)); }
 
 .vc-hero { padding: 28px 20px 20px; text-align: center; }
 .vc-eyebrow { color: var(--hi); font-size: 12px; font-weight: 650; letter-spacing: 0.28em; text-transform: uppercase; margin-bottom: 18px; overflow-wrap: anywhere; }
 .vc-avatar {
   width: 112px; height: 112px; border-radius: 50%; margin: 0 auto; display: grid; place-items: center; object-fit: cover;
-  background: radial-gradient(circle at 32% 25%, var(--deep-top), var(--deep));
-  box-shadow: 0 0 0 2.5px var(--hi), 0 0 0 8px rgba(255, 255, 255, 0.06), 0 18px 34px -14px rgba(0, 0, 0, 0.75);
+  /* A gold gradient ring around the photo. */
+  border: 3.5px solid transparent;
+  background:
+    radial-gradient(circle at 32% 25%, var(--glass-top), var(--deep)) padding-box,
+    linear-gradient(140deg, var(--hi-light), var(--hi) 45%, var(--hi-bottom) 70%, var(--hi-light)) border-box;
+  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.07), 0 18px 34px -14px rgba(0, 0, 0, 0.75);
   font-family: var(--serif); font-size: 44px; font-weight: 700; color: #fff; letter-spacing: 0.01em;
 }
 .vc-name { font-family: var(--serif); font-size: 32px; line-height: 1.15; font-weight: 700; margin-top: 22px; letter-spacing: -0.005em; text-transform: none; color: #fff; overflow-wrap: anywhere; }
@@ -183,7 +188,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.15s ease;
 }
 .vc-action:active { transform: scale(0.96); }
-.vc-action svg { width: 24px; height: 24px; }
+.vc-action svg { width: 25px; height: 25px; }
 .vc-action.primary {
   background: linear-gradient(180deg, var(--hi-top), var(--hi-bottom)); color: var(--hi-ink); border-color: transparent;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 12px 24px -12px var(--hi-glow);
@@ -197,7 +202,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; flex: none;
   background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--hi);
 }
-.vc-ico svg { width: 21px; height: 21px; }
+.vc-ico svg { width: 22px; height: 22px; }
 .vc-row small { display: block; font-size: 13px; color: rgba(255, 255, 255, 0.62); }
 .vc-row bdi { display: block; font-size: 17px; font-weight: 560; overflow-wrap: anywhere; }
 .vc-row bdi.long { font-size: 15px; }
@@ -217,11 +222,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* The small version on the Cards and Share screens. */
 .vc-mini {
   display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 24px;
-  background: radial-gradient(120% 90% at 0% 0%, var(--glow) 0%, transparent 62%), linear-gradient(180deg, var(--deep-top), var(--deep));
+  background: radial-gradient(120% 90% at 0% 0%, var(--haze) 0%, transparent 60%), linear-gradient(180deg, var(--glass-top), var(--glass-bottom));
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 18px 40px -22px rgba(0, 0, 0, 0.6);
 }
-.vc-avatar.small { width: 58px; height: 58px; margin: 0; flex: none; font-size: 22px; box-shadow: 0 0 0 2px var(--hi), 0 8px 18px -10px rgba(0, 0, 0, 0.7); }
+.vc-avatar.small { width: 58px; height: 58px; margin: 0; flex: none; font-size: 22px; border-width: 2.5px; box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.7); }
 .vc-mini .vc-name { font-size: 20px; margin: 0; }
 .vc-mini .vc-title { font-size: 14px; margin-top: 3px; color: rgba(255, 255, 255, 0.75); }
 
@@ -229,10 +234,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 body.card-page {
   color: #fff;
   background:
-    radial-gradient(90vmax 70vmax at 0% 0%, var(--glow), transparent 60%),
-    radial-gradient(80vmax 70vmax at 100% 65%, var(--tint), transparent 65%),
-    var(--deep);
-  background-attachment: fixed;
+    radial-gradient(90vmax 60vmax at 0% 0%, var(--page-haze), transparent 60%),
+    radial-gradient(80vmax 70vmax at 100% 70%, var(--tint), transparent 65%),
+    linear-gradient(180deg, var(--deep) 0, var(--page) 100vh);
+  background-repeat: no-repeat;
+  background-color: var(--page);
 }
 body.card-page .backdrop { display: none; }
 body.card-page .topbar h1 { color: #fff; }

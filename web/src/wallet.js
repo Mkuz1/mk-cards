@@ -54,10 +54,12 @@ function hueOf(c) {
 /** The pass colours, the same rules as the card page: a deep shade of the card's colour, white text, and a fine
  * highlight (gold, or silver when the card's colour is itself warm) for the small labels. */
 export function passColours(card) {
-  const accent = /^#[0-9a-f]{6}$/i.test(card.accent || '') ? card.accent : '#5b8cff';
-  const bg = card.style === 'mono' ? hex('#12151d') : mixRgb(accent, '#060a18', card.style === 'solid' ? 0.6 : 0.74);
+  const accent = /^#[0-9a-f]{6}$/i.test(card.accent || '') ? card.accent : '#2a5ba8';
+  // The pass background is the card's mid-tone glass colour, so it reads as the same object as the card page.
+  const deep = card.style === 'mono' ? hex('#10141c') : mixRgb(accent, '#050d1c', card.style === 'solid' ? 0.6 : 0.72);
+  const bg = card.style === 'mono' ? mixRgb(toHex(deep), '#5a6478', 0.4) : mixRgb(toHex(deep), accent, 0.4);
   const hue = hueOf(accent);
-  const label = hue >= 18 && hue <= 70 ? hex('#efeae0') : hex('#d9b65a');
+  const label = hue >= 18 && hue <= 70 ? hex('#efeae0') : hex('#d5b757');
   return { background: bg, label, hex: toHex(bg) };
 }
 

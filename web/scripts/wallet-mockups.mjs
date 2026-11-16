@@ -14,7 +14,7 @@ const samples = [
   {
     slug: 'mkoussa/work', label: 'Work',
     card: { name: 'Mohamad Koussa', title: 'Group Head of Procurement & Supply Chain', department: 'Group Procurement', company: 'Bukhatir Group',
-      accent: '#5b8cff', style: 'aurora',
+      accent: '#2a5ba8', style: 'aurora',
       phones: [{ label: 'mobile', value: '+971 52 692 9505' }, { label: 'work', value: '+971 6 512 6060' }],
       emails: [{ label: 'work', value: 'mohamad.koussa@bukhatir.ae' }], website: 'https://bukhatirgroup.com', whatsapp: '+971526929505' },
   },

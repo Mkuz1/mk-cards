@@ -23,16 +23,23 @@ function hueOf(c) {
   return (h * 60 + 360) % 360;
 }
 
-/** A deep shade of the chosen colour, a soft glow of it, and a fine highlight: gold, or silver when the chosen
- * colour is itself warm. The server uses the same rules for the wallet passes. */
+/** The card's colours, tuned so the Midnight colour reproduces the reference design: a deep navy page, glass
+ * panels that are lighter at the top with a misty glow in the top-left corner, and gold details (silver when the
+ * chosen colour is itself warm). The server uses the same rules for the wallet passes. */
 export function cardTheme(card) {
-  const a = /^#[0-9a-f]{6}$/i.test(card.accent || '') ? card.accent : '#5b8cff';
+  const a = /^#[0-9a-f]{6}$/i.test(card.accent || '') ? card.accent : '#2a5ba8';
+  const mono = card.style === 'mono';
+  const deep = mono ? '#10141c' : mixHex(a, '#050d1c', card.style === 'solid' ? 0.6 : 0.72);
   const hue = hueOf(a);
   return {
     a,
-    deep: card.style === 'mono' ? '#12151d' : mixHex(a, '#060a18', card.style === 'solid' ? 0.6 : 0.74),
-    glow: card.style === 'mono' ? '#465066' : mixHex(a, '#ffffff', 0.1),
-    hi: hue >= 18 && hue <= 70 ? '#efeae0' : '#d9b65a',
+    deep,
+    page: mixHex(deep, '#000000', 0.12),
+    glassTop: mixHex(deep, mono ? '#5a6478' : a, 0.58),
+    glassBottom: mixHex(deep, mono ? '#3a4254' : a, 0.33),
+    haze: mono ? '#b9c0cc' : mixHex(a, '#b9c4c0', 0.8),
+    glow: mono ? '#465066' : mixHex(a, '#b9c4c0', 0.55),
+    hi: hue >= 18 && hue <= 70 ? '#efeae0' : '#d5b757',
   };
 }
 
