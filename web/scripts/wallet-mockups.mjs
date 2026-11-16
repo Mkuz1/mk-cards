@@ -79,20 +79,25 @@ function appleBack(s) {
     <div class="ab-remove">Remove Pass</div></div>`;
 }
 
-function googlePass(s, i) {
+function googlePass(s) {
   const { card } = s;
   const c = passColours(card);
+  const phoneLabel = (p) => ({ mobile: 'Mobile', work: 'Office', home: 'Home' })[p.label] || 'Phone';
+  const second = card.phones[1] ? [phoneLabel(card.phones[1]), card.phones[1].value] : card.whatsapp ? ['WhatsApp', card.whatsapp] : null;
+  const title = card.company || card.name;
   return `<div class="g-pass" style="background:${c.hex}">
-    <div class="g-top"><img class="g-logo" src="${googleLogo}"><span>MK Cards</span></div>
+    <div class="g-top"><span class="g-initial">${esc(Array.from(title)[0].toUpperCase())}</span><span>${esc(title)}</span></div>
     <div class="g-body">
-      <div class="g-sub" dir="auto">${esc([card.title, card.company].filter(Boolean).join(' · '))}</div>
+      <div class="g-sub" dir="auto">${esc(card.title || 'Business card')}</div>
       <div class="g-head" dir="auto">${esc(card.name)}</div>
-      ${card.phones[0] ? `<div class="g-row"><div><div class="g-label">Phone</div><div class="g-val">${esc(card.phones[0].value)}</div></div></div>` : ''}
+      <div class="g-row">
+        ${card.phones[0] ? `<div><div class="g-label">${phoneLabel(card.phones[0])}</div><div class="g-val">${esc(card.phones[0].value)}</div></div>` : '<div></div>'}
+        ${second ? `<div style="text-align:right"><div class="g-label">${second[0]}</div><div class="g-val">${esc(second[1])}</div></div>` : ''}
+      </div>
       ${card.emails[0] ? `<div class="g-row g-row-tight"><div><div class="g-label">Email</div><div class="g-val">${esc(card.emails[0].value)}</div></div></div>` : ''}
       <div class="g-barcode"><div class="qr" data-text="${encodeURIComponent(qrVCard(card, `https://mkcards.pages.dev/${s.slug}`))}"></div>
-        <div class="g-alt">Scan to save contact</div></div>
+        <div class="g-alt">MK Cards</div></div>
     </div>
-    <img class="g-hero" src="${dataUri(`${art}/art-${i}-hero.jpg`, 'image/jpeg')}">
   </div>`;
 }
 
@@ -159,8 +164,8 @@ body { font-family: -apple-system, "SF Pro Text", Inter, "Segoe UI", Roboto, "No
 /* Google Wallet generic pass */
 .g-pass { border-radius: 24px; overflow: hidden; color: #fff; }
 .g-top { display: flex; align-items: center; gap: 10px; padding: 16px 18px 12px; font-size: 16px; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,.18); }
-.g-logo { width: 32px; height: 32px; border-radius: 50%; }
-.g-body { padding: 14px 18px 18px; }
+.g-initial { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.18); font-weight: 600; font-size: 15px; }
+.g-body { padding: 14px 18px 22px; }
 .g-sub { font-size: 14px; opacity: .85; }
 .g-head { font-size: 26px; font-weight: 500; margin-top: 2px; }
 .g-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 18px; }
@@ -169,7 +174,7 @@ body { font-family: -apple-system, "SF Pro Text", Inter, "Segoe UI", Roboto, "No
 .g-val { font-size: 15px; margin-top: 2px; }
 .g-barcode { background: #fff; color: #333; border-radius: 16px; width: 196px; margin: 22px auto 4px; padding: 14px 14px 8px; text-align: center; }
 .g-barcode .qr svg { width: 168px; height: 168px; display: block; }
-.g-alt { font-size: 12px; margin-top: 6px; }
+.g-alt { font-size: 10px; margin-top: 6px; letter-spacing: .06em; color: #666; }
 .g-hero { display: block; width: 100%; }
 `;
 
@@ -187,11 +192,11 @@ const screens = [
     html: phone('Wallet', `<div class="stack-behind" style="background:#2c2c2e"></div>${applePass(samples[0])}`) },
   { file: 'apple-wallet-details', caption: 'Apple Wallet — pass details', note: 'Every phone, email and link, all tappable',
     html: phone('', appleBack(samples[0])) },
-  { file: 'google-wallet-front', caption: 'Google Wallet — front', note: 'Name, role, phone and email, QR, and the card banner',
+  { file: 'google-wallet-front', caption: 'Google Wallet — front', note: 'Same layout as the Apple pass: company, title and name, phones, email; MK Cards under the QR',
     html: phone('', googlePass(samples[0], 0), false) },
   { file: 'apple-wallet-sara', caption: 'Apple Wallet — another colour', note: 'The pass colour follows the card; orange and yellow cards get silver labels instead of gold',
     html: phone('Wallet', `<div class="stack-behind" style="background:#2c2c2e"></div>${applePass(samples[1])}`) },
-  { file: 'google-wallet-omar', caption: 'Google Wallet — another colour', note: 'Card with no photo uses initials',
+  { file: 'google-wallet-omar', caption: 'Google Wallet — another colour', note: 'The pass colour follows the card',
     html: phone('', googlePass(samples[2], 2), false) },
 ];
 

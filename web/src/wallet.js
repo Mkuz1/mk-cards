@@ -173,49 +173,55 @@ function sign(manifestText, cert, key) {
 
 const text = (value) => ({ defaultValue: { language: 'en', value } });
 
+// Google Wallet mirrors the Apple pass: company at the top, title over the name, two phone numbers side by side,
+// then the email; no pictures; "MK Cards" in small print under the QR code. (Google picks the text colours itself
+// and has no logo, so it shows the company's first letter in the top corner.)
 function googleClass(issuer) {
+  const value = (id) => ({ firstValue: { fields: [{ fieldPath: `object.textModulesData['${id}']` }] } });
   return {
     id: `${issuer}.mkcards_business_card`,
-    // Show the phone and the email on the front of the pass, each on its own row so neither is squeezed.
     classTemplateInfo: {
       cardTemplateOverride: {
-        cardRowTemplateInfos: ['phone', 'email'].map((id) => ({
-          oneItem: { item: { firstValue: { fields: [{ fieldPath: `object.textModulesData['${id}']` }] } } },
-        })),
+        cardRowTemplateInfos: [
+          { twoItems: { startItem: value('phone'), endItem: value('phone2') } },
+          { oneItem: { item: value('email') } },
+        ],
       },
     },
   };
 }
 
-function googleObject(issuer, { cardId, card, link, origin, hero }) {
+function googleObject(issuer, { cardId, card, link }) {
   const phones = card.phones || [];
   const emails = card.emails || [];
+  const phoneLabel = (p) => ({ mobile: 'Mobile', work: 'Office', home: 'Home' })[p.label] || 'Phone';
   const uris = [
     ...phones.map((p, i) => ({ id: `tel${i}`, uri: `tel:${p.value.replace(/[^\d+]/g, '')}`, description: `Call ${p.value}` })),
     ...emails.map((e, i) => ({ id: `mail${i}`, uri: `mailto:${e.value}`, description: `Email ${e.value}` })),
     card.whatsapp && { id: 'whatsapp', uri: `https://wa.me/${card.whatsapp.replace(/\D/g, '')}`, description: 'Chat on WhatsApp' },
     card.website && { id: 'web', uri: card.website, description: 'Website' },
-    { id: 'page', uri: link, description: 'My MK card' },
+    { id: 'page', uri: link, description: 'My card' },
   ].filter(Boolean);
+  const second = phones[1] ? { id: 'phone2', header: phoneLabel(phones[1]), body: phones[1].value }
+    : card.whatsapp ? { id: 'phone2', header: 'WhatsApp', body: card.whatsapp } : null;
   return {
     id: `${issuer}.mk_${cardId}`,
     classId: `${issuer}.mkcards_business_card`,
     state: 'ACTIVE',
-    cardTitle: text('MK Cards'),
+    cardTitle: text(card.company || card.name),
+    subheader: text(card.title || 'Business card'),
     header: text(card.name),
-    subheader: text([card.title, card.company].filter(Boolean).join(' · ') || 'Business card'),
     hexBackgroundColor: passColours(card).hex,
-    logo: { sourceUri: { uri: `${origin}/wallet/google-logo.png` }, contentDescription: text('MK Cards') },
-    ...(hero ? { heroImage: { sourceUri: { uri: origin + hero }, contentDescription: text(`${card.name}'s card`) } } : {}),
     textModulesData: [
-      phones[0] && { id: 'phone', header: 'Phone', body: phones[0].value },
+      phones[0] && { id: 'phone', header: phoneLabel(phones[0]), body: phones[0].value },
+      second,
       emails[0] && { id: 'email', header: 'Email', body: emails[0].value },
-      card.company && { id: 'company', header: 'Company', body: card.company },
+      card.department && { id: 'department', header: 'Department', body: card.department },
       card.address && { id: 'address', header: 'Address', body: card.address },
       card.bio && { id: 'about', header: 'About', body: card.bio },
     ].filter(Boolean),
     linksModuleData: { uris },
-    barcode: { type: 'QR_CODE', value: qrVCard(card, link), alternateText: 'Scan to save contact' },
+    barcode: { type: 'QR_CODE', value: qrVCard(card, link), alternateText: 'MK Cards' },
   };
 }
 

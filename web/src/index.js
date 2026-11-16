@@ -586,7 +586,6 @@ async function walletPass(request, env, url, id, kind) {
   if (!row) throw new HttpError(404, 'Card not found.');
   const card = readCard(row.data);
   const link = `${url.origin}/${user.username}${row.slug ? '/' + row.slug : ''}`;
-  const media = await cardMedia(env, id);
   const ready = walletStatus(env);
 
   if (kind === 'apple.pkpass') {
@@ -607,7 +606,7 @@ async function walletPass(request, env, url, id, kind) {
     });
   }
   if (!ready.google) throw new HttpError(503, 'Google Wallet passes are not set up yet.');
-  const save = await googleSaveUrl(env, { cardId: id, card, link, origin: url.origin, hero: media.hero && media.hero.path });
+  const save = await googleSaveUrl(env, { cardId: id, card, link, origin: url.origin });
   return new Response(null, { status: 302, headers: { location: save, 'cache-control': 'private, no-store' } });
 }
 

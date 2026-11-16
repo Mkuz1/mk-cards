@@ -1,6 +1,5 @@
 // Pictures drawn from a card in the browser when it is saved:
 //   og    1200×630 JPEG  — the image shown in link previews (WhatsApp, LinkedIn, iMessage…)
-//   hero  1032×336 JPEG  — the banner at the bottom of the Google Wallet pass
 // Drawing here, not on the server, means every language renders with the phone's own fonts.
 // The look follows the card page: a deep shade of the card's colour, a round photo with a fine gold ring,
 // the name in a serif face and the company as a small spaced heading.
@@ -43,7 +42,6 @@ export async function drawCardArt(card, link) {
   const photo = card.photo ? await loadImage(card.photo).catch(() => null) : null;
   return {
     og: drawPreview(card, link, photo).toDataURL('image/jpeg', 0.9),
-    hero: drawHero(card, link, photo).toDataURL('image/jpeg', 0.9),
   };
 }
 
@@ -92,25 +90,6 @@ function drawPreview(card, link, photo) {
   ctx.fillText(fit(ctx, label, pillW - 52), pillX + 26, pillY + 26);
   ctx.textBaseline = 'alphabetic';
   text(ctx, 'MK CARDS', 48 + 70, H - 48 - 58, size, `600 17px ${SANS}`, 20, 1, 'rgba(255,255,255,.5)', 'left', 5, true);
-  return canvas;
-}
-
-function drawHero(card, link, photo) {
-  const W = 1032, H = 336;
-  const { canvas, ctx } = surface(W, H);
-  const t = cardTheme(card);
-  backdrop(ctx, W, H, t, card.style);
-  const size = 176;
-  avatar(ctx, card, photo, 64 + size / 2, H / 2, size, t);
-  const x = 64 + size + 48;
-  const maxW = W - 56 - x;
-  const align = isRtl(card.name) ? 'right' : 'left';
-  let y = 96;
-  if (card.company) y = text(ctx, card.company.toUpperCase(), x, y, maxW, `650 18px ${SANS}`, 28, 1, t.hi, align, 5) + 10;
-  y = text(ctx, card.name || 'MK Cards', x, y + 22, maxW, `700 48px ${SERIF}`, 54, 1, '#fff', align);
-  if (card.title) y = text(ctx, card.title, x, y, maxW, `500 24px ${SANS}`, 32, 1, 'rgba(255,255,255,.9)', align);
-  rule(ctx, align === 'right' ? x + maxW - 48 : x, y + 2, t.hi, 48);
-  text(ctx, 'MK CARDS', W - 56 - 160, H - 30, 160, `600 14px ${SANS}`, 18, 1, 'rgba(255,255,255,.45)', 'right', 4, true);
   return canvas;
 }
 
