@@ -131,23 +131,15 @@ Each card can be added to Apple Wallet and Google Wallet from the Cards and Shar
 QR code holds the contact itself (a vCard), so scanning it with any phone camera offers "Add contact".
 The buttons appear once each wallet is set up. Mockups: `docs/wallet-mockups/`.
 
-### Apple Wallet setup
+### Apple Wallet setup (done)
 
-The private key is already stored in the Worker (secret `APPLE_PASS_KEY`). What is left:
+Set up with the Pass Type ID `pass.app.mkcards.card`. The Worker holds the private key (`APPLE_PASS_KEY`)
+and the certificate (`APPLE_PASS_CERT`); the pass type ID and team ID are read from the certificate.
+Apple's intermediate certificate (WWDR G4, valid to 2030) is bundled in `web/src/apple-wwdr.js`.
 
-1. developer.apple.com → Certificates, IDs & Profiles → Identifiers → **+** → **Pass Type IDs**.
-   Description "MK Cards", identifier for example `pass.app.mkcards.card`.
-2. Open that Pass Type ID → **Create Certificate** → upload `MKCards-PassTypeID.certSigningRequest`
-   (sent with this project) → download `pass.cer`.
-3. Store it in the Worker as the secret `APPLE_PASS_CERT` (PEM). The certificate is public, so it can be
-   handed over freely; to do it yourself:
-   ```bash
-   openssl x509 -inform DER -in pass.cer -out pass.pem
-   npx wrangler secret put APPLE_PASS_CERT < pass.pem
-   ```
-
-The pass type ID and team ID are read from the certificate. Apple's intermediate certificate (WWDR G4,
-valid to 2030) is bundled in `web/src/apple-wwdr.js`.
+**The pass certificate expires on 16 December 2027.** To renew: on developer.apple.com open the Pass Type ID,
+create a new certificate from a new certificate request, and replace `APPLE_PASS_CERT` (and `APPLE_PASS_KEY`
+if a new key was made) with `npx wrangler secret put`.
 
 ### Google Wallet setup
 
