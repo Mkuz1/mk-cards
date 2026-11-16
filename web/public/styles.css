@@ -1,26 +1,28 @@
-/* MK Cards — one formal look everywhere: deep midnight navy, frosted glass and gold, as on the cards and the app icon. */
+/* MK Cards — formal and light for the people who manage cards (navy, gold and frosted white, as in the dashboard
+   design), and deep navy for the card pages that visitors see (body.card-page, further down). */
 :root {
-  --bg: #0b1c38;
-  --ink: #f4f6fb;
-  --ink-2: #c3cbe0;
-  --ink-3: #9aa7c3;
-  --glass: rgba(255, 255, 255, 0.07);
-  --glass-strong: rgba(255, 255, 255, 0.12);
-  --glass-edge: rgba(255, 255, 255, 0.3);
-  --glass-edge-low: rgba(255, 255, 255, 0.12);
-  --hairline: rgba(255, 255, 255, 0.14);
-  --field: rgba(255, 255, 255, 0.07);
-  --shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.75), 0 2px 8px rgba(0, 0, 0, 0.2);
-  --accent: #d5b757;
-  --gold-top: #e4cc7c;
-  --gold-bottom: #bf9f3e;
-  --gold-ink: #1d1704;
-  --danger: #ff8394;
-  --sheet: #13294b;
-  --radius: 28px;
+  --bg: #eef1f6;
+  --ink: #0d1b33;
+  --ink-2: #4a5672;
+  --ink-3: #6f7a93;
+  --glass: rgba(255, 255, 255, 0.66);
+  --glass-strong: rgba(255, 255, 255, 0.9);
+  --glass-edge: rgba(255, 255, 255, 0.95);
+  --glass-edge-low: rgba(13, 27, 51, 0.08);
+  --hairline: rgba(13, 27, 51, 0.1);
+  --field: rgba(255, 255, 255, 0.85);
+  --shadow: 0 18px 40px -26px rgba(13, 27, 51, 0.4), 0 1px 3px rgba(13, 27, 51, 0.06);
+  --accent: #0f2343;
+  --gold: #b0892f;
+  --primary-top: #1d3d70;
+  --primary-bottom: #0f2343;
+  --primary-ink: #ffffff;
+  --danger: #c2334c;
+  --sheet: #ffffff;
+  --radius: 24px;
   --font: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Arabic", sans-serif;
   --serif: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Georgia, "Noto Naskh Arabic", "Times New Roman", serif;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -36,19 +38,21 @@ body {
 }
 h1, h2, h3, p { margin: 0; }
 h1 { font-family: var(--serif); font-size: 31px; line-height: 1.15; letter-spacing: -0.005em; font-weight: 700; text-wrap: balance; }
-h2 { font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); font-weight: 650; }
+h2 { font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); font-weight: 650; }
+.eyebrow { font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--gold); font-weight: 650; margin-bottom: 6px; }
 a { color: var(--accent); }
 button, input, select, textarea { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Midnight backdrop with a misty glow in the top-left corner (plain gradients, cheap to paint on any phone). */
+/* Soft daylight backdrop: pale blue on the left, a warm glow on the right, a hint of teal below. */
 .backdrop {
   position: fixed; inset: 0; z-index: -1;
   background:
-    radial-gradient(80vmax 55vmax at 0% 0%, rgba(156, 175, 187, 0.34) 0%, transparent 60%),
-    radial-gradient(70vmax 60vmax at 100% 85%, rgba(42, 91, 168, 0.3) 0%, transparent 65%),
-    linear-gradient(180deg, #0f2343, #0a1a33);
+    radial-gradient(60vmax 45vmax at 8% 18%, rgba(150, 178, 222, 0.42) 0%, transparent 60%),
+    radial-gradient(50vmax 45vmax at 98% 62%, rgba(244, 222, 184, 0.5) 0%, transparent 60%),
+    radial-gradient(55vmax 40vmax at 40% 105%, rgba(176, 222, 214, 0.36) 0%, transparent 60%),
+    #eef1f6;
 }
 .backdrop i { display: none; }
 
@@ -98,9 +102,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn:hover { filter: brightness(1.06); }
 .btn:active { transform: scale(0.97); }
 .btn.primary {
-  background: linear-gradient(180deg, var(--gold-top), var(--gold-bottom));
-  color: var(--gold-ink); border-color: transparent;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 10px 24px -12px rgba(213, 183, 87, 0.7);
+  background: linear-gradient(180deg, var(--primary-top), var(--primary-bottom));
+  color: var(--primary-ink); border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 10px 22px -12px rgba(15, 35, 67, 0.7);
 }
 .btn.danger { color: var(--danger); }
 .btn.block { width: 100%; }
@@ -212,6 +216,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* A card's public page takes on the card's colours. */
 body.card-page {
+  /* Visitors' card pages keep the deep navy look; these colours also style the windows opened there. */
+  --ink: #f4f6fb; --ink-2: #c3cbe0; --ink-3: #9aa7c3;
+  --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.12); --glass-edge: rgba(255, 255, 255, 0.3);
+  --glass-edge-low: rgba(255, 255, 255, 0.12); --hairline: rgba(255, 255, 255, 0.14); --field: rgba(255, 255, 255, 0.07);
+  --accent: #d5b757; --gold: #d5b757; --sheet: #13294b;
+  --primary-top: #e4cc7c; --primary-bottom: #bf9f3e; --primary-ink: #1d1704;
+  color-scheme: dark;
   color: #fff;
   background:
     radial-gradient(90vmax 60vmax at 0% 0%, var(--page-haze), transparent 60%),
@@ -321,3 +332,106 @@ input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 32px
 .qr-sheet-title { color: var(--accent); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 650; }
 .qr-sheet .qr { width: min(100%, 300px); }
 .preview-lang { max-width: 260px; margin: 0 auto; }
+
+/* ---------- Owner app: top navigation, page headings, card tiles, statistics, administration ---------- */
+.topnav { position: sticky; top: 0; z-index: 30; padding: calc(10px + env(safe-area-inset-top)) 16px 0; }
+.topnav-inner {
+  max-width: 1120px; margin: 0 auto; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; border-radius: 22px;
+}
+.topnav .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-family: var(--serif); font-size: 20px; font-weight: 700; }
+.topnav .brand-icon { width: 34px; height: 34px; }
+.topnav-links { display: flex; gap: 4px; margin-left: 8px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+.topnav-links a { padding: 8px 14px; border-radius: 999px; color: var(--ink-2); text-decoration: none; font-weight: 600; font-size: 15px; white-space: nowrap; }
+.topnav-links a[aria-current="page"] { background: var(--accent); color: #fff; }
+.topnav-avatar {
+  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none; text-decoration: none;
+  background: linear-gradient(180deg, var(--primary-top), var(--primary-bottom)); color: #fff; font-weight: 700; font-size: 14px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px rgba(176, 137, 47, 0.6);
+}
+@media (max-width: 560px) {
+  .topnav .brand span { display: none; }
+  .topnav-links { margin-left: 0; }
+  .topnav-links a { padding: 8px 11px; font-size: 14px; }
+}
+body.wide #app { max-width: 1120px; }
+#app { padding-top: 22px; padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+.wide-stack { gap: 22px; }
+.narrow { max-width: 520px; width: 100%; }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+.page-head h1 { font-size: 38px; }
+.page-head p.muted { margin-top: 8px; max-width: 62ch; }
+.head-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn.small { min-height: 38px; padding: 0 14px; font-size: 14px; gap: 6px; }
+.btn.small svg { width: 17px; height: 17px; }
+.btn.icon-only { width: 38px; padding: 0; }
+.btn.danger { color: var(--danger); }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+@media (max-width: 400px) { .tiles { grid-template-columns: 1fr; } }
+.tile {
+  border-radius: 24px; overflow: hidden; background: var(--glass-strong); border: 1px solid var(--glass-edge-low);
+  box-shadow: var(--shadow); display: flex; flex-direction: column;
+}
+.tile.off .tile-head { filter: grayscale(0.7) brightness(0.85); }
+.tile-head {
+  display: flex; align-items: center; gap: 14px; padding: 22px 18px; min-height: 140px; color: #fff; text-decoration: none; position: relative;
+  background: radial-gradient(120% 90% at 0% 0%, var(--haze) 0%, transparent 60%), linear-gradient(180deg, var(--glass-top), var(--deep));
+}
+.tile-name { display: block; font-family: var(--serif); font-size: 21px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.tile-role { display: block; font-size: 13.5px; opacity: 0.85; margin-top: 3px; overflow-wrap: anywhere; }
+.tile-badges { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; }
+.badge {
+  display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.4); color: #fff;
+}
+.badge.off { background: #c2334c; border-color: transparent; }
+.tile-body { padding: 14px 16px 16px; display: grid; gap: 10px; }
+.tile-link { display: flex; align-items: center; gap: 8px; color: var(--ink-2); text-decoration: none; font-size: 14.5px; min-width: 0; }
+.tile-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-link svg { width: 17px; height: 17px; flex: none; }
+.tile-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13.5px; color: var(--ink-2); }
+.tile-stats strong { color: var(--ink); font-weight: 700; }
+.tile-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.tile-actions .btn.small { padding: 0 11px; }
+.tile-actions .btn.small.icon-only { padding: 0; }
+.tile-new {
+  border: 1.5px dashed rgba(13, 27, 51, 0.22); background: rgba(255, 255, 255, 0.35); box-shadow: none; min-height: 270px;
+  align-items: center; justify-content: center; gap: 6px; text-decoration: none; color: var(--ink); text-align: center;
+}
+.tile-plus { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; margin-bottom: 6px; }
+.tile-plus svg { width: 24px; height: 24px; }
+
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.stat-grid.wide { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.stat { padding: 14px; border-radius: 16px; background: var(--field); border: 1px solid var(--hairline); display: grid; gap: 2px; }
+.stat strong { font-family: var(--serif); font-size: 28px; line-height: 1.1; color: var(--ink); }
+.stat span { font-size: 13px; color: var(--ink-2); }
+.chart { border-radius: 14px; background: var(--field); border: 1px solid var(--hairline); padding: 12px 10px 6px; }
+.chart svg { display: block; width: 100%; height: 130px; }
+.bar-view { fill: #8ea6cf; }
+.bar-save { fill: var(--gold); }
+.legend { display: flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.dot.view { background: #8ea6cf; }
+.dot.save { background: var(--gold); margin-left: 10px; }
+
+.member-list { display: grid; gap: 10px; }
+.member { border: 1px solid var(--hairline); border-radius: 18px; padding: 12px 14px; background: var(--field); display: grid; gap: 10px; }
+.member.off { opacity: 0.72; }
+.member-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.member-avatar {
+  width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; flex: none; font-weight: 700; font-size: 14px;
+  background: linear-gradient(180deg, var(--primary-top), var(--primary-bottom)); color: #fff;
+}
+.member-who { display: grid; gap: 1px; min-width: 180px; }
+.member-who span { overflow-wrap: anywhere; }
+.member-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.member-meta .badge { background: #e8edf6; color: var(--ink-2); border-color: var(--hairline); }
+.member-meta .badge.on { background: #e4f4ec; color: #1d7a4e; }
+.member-meta .badge.pending { background: #fbf1dc; color: #8a6414; }
+.member-meta .badge.off { background: #fbe6ea; color: #b22a43; }
+.member-meta .badge.role { background: #0f2343; color: #fff; }
+.member-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.member-cards { display: grid; gap: 8px; border-top: 1px solid var(--hairline); padding-top: 10px; }
+.member-card { flex-wrap: wrap; }
+.linkbox.big { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; font-family: ui-monospace, Menlo, monospace; }

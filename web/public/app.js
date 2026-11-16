@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.0.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.1.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -43,6 +43,14 @@ const ICONS = {
   save: '<path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.500" cy="7" r="4"/><path d="M19 8v6M16 11h6"/>',
   download: '<path d="M12 4v11M8 11l4 4 4-4M5 19h14"/>',
   whatsapp: '<path d="M4 20l1.300-4A8.500 8.500 0 1 1 8 18.700L4 20z"/><path d="M9.200 8.600c.2-.5.6-.6.9-.6h.5c.2 0 .4.1.5.4l.7 1.600c.1.2 0 .5-.1.6l-.5.6c-.1.1-.1.3 0 .5a6 6 0 0 0 2.700 2.400c.2.1.4 0 .5-.1l.6-.7c.1-.2.4-.2.6-.1l1.600.8c.2.1.3.3.3.5 0 .9-.6 1.600-1.400 1.800-1 .3-2.700-.2-4.400-1.700-1.600-1.400-2.500-3-2.500-4 0-.6.3-1.300.5-1.900z"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  more: '<circle cx="5" cy="12" r="1.600"/><circle cx="12" cy="12" r="1.600"/><circle cx="19" cy="12" r="1.600"/>',
+  users: '<circle cx="9" cy="8" r="3.500"/><path d="M2.500 20a6.500 6.500 0 0 1 13 0M16 4.500a3.500 3.500 0 0 1 0 7M18 14.500a6.500 6.500 0 0 1 3.500 5.500"/>',
+  upload: '<path d="M12 16V4M8 8l4-4 4 4M5 20h14"/>',
+  power: '<path d="M12 3v9M6.300 6.300a8 8 0 1 0 11.400 0"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/>',
+  building: '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16M15 9h4a1 1 0 0 1 1 1v11M3 21h18M8 8h3M8 12h3M8 16h3"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
   chat: '<path d="M20 11.500a8 8 0 0 1-11.800 7L4 20l1.500-4.200A8 8 0 1 1 20 11.500z"/><path d="M9 10.500h6M9 13.500h4"/>',
   qr: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 14h2M14 18h2v2M19 17v3"/>',
@@ -644,37 +652,114 @@ async function redrawOutdatedArt() {
 function homeScreen() {
   setTimeout(redrawOutdatedArt, 400);
   if (!me.user) return welcomeScreen();
-  const root = h('div', { class: 'stack' },
-    h('header', { class: 'topbar' }, h('div', { class: 'brand grow' }, logo(), 'MK Cards'),
-      h('span', { class: 'pill' }, '@' + me.user.username)));
+  const head = h('header', { class: 'page-head' },
+    h('div', { class: 'grow' },
+      h('p', { class: 'eyebrow' }, 'Dashboard'),
+      h('h1', {}, 'My cards'),
+      h('p', { class: 'muted' }, 'Make a card for each audience and share its link or QR code. Your links: ',
+        h('strong', {}, `${location.host}/${me.user.username}/…`))),
+    h('div', { class: 'head-actions' },
+      h('a', { class: 'btn', href: '/api/me/activity.csv', download: 'mkcards-activity.csv' }, icon('download'), 'Activity CSV'),
+      me.cards.length < MAX_CARDS && h('a', { class: 'btn primary', href: '/new' }, icon('plus'), 'New card')));
 
-  if (!me.cards.length) {
-    root.append(h('section', { class: 'glass hero' },
-      h('h1', {}, 'Make your first card'),
-      h('p', {}, `It will be live at ${location.host}/${me.user.username} as soon as you save it.`),
-      h('a', { class: 'btn primary', href: '/new' }, icon('plus'), 'Create your card')));
-    return root;
-  }
-
-  root.append(h('h1', {}, me.cards.length === 1 ? 'Your card' : 'Your cards'));
-  for (const entry of me.cards) {
-    root.append(h('section', { class: 'stack', style: 'gap:10px' },
-      h('a', { href: `/share/${entry.id}`, style: 'text-decoration:none', 'aria-label': `Share ${entry.card.name}` },
-        renderCard(entry.card, { compact: true })),
-      h('p', { class: 'small muted', style: 'padding:0 6px;overflow-wrap:anywhere' },
-        entry.card.label ? `${entry.card.label} · ` : entry.slug === '' && me.cards.length > 1 ? 'Main card · ' : '',
-        `${location.host}${cardPath(entry)} · ${entry.views} ${entry.views === 1 ? 'view' : 'views'}`),
-      h('div', { class: 'grid-2 tight' },
-        h('a', { class: 'btn primary', href: `/share/${entry.id}` }, icon('share'), 'Share'),
-        h('a', { class: 'btn', href: `/edit/${entry.id}` }, icon('edit'), 'Edit'),
-        h('a', { class: 'btn', href: `/inbox/${entry.id}` }, icon('inbox'), entry.contacts ? `Contacts (${entry.contacts})` : 'Contacts'),
-        qrDownloadButton(entry, 'png', 'Download QR')),
-      walletButtons(entry)));
-  }
+  const grid = h('div', { class: 'tiles' }, ...me.cards.map(cardTile));
   if (me.cards.length < MAX_CARDS) {
-    root.append(h('a', { class: 'btn block', href: '/new' }, icon('plus'), 'Add another card'));
+    grid.append(h('a', { class: 'tile tile-new', href: '/new' },
+      h('span', { class: 'tile-plus' }, icon('plus')),
+      h('strong', {}, me.cards.length ? 'New card' : 'Create your first card'),
+      h('span', { class: 'muted small' }, 'e.g. Work, Suppliers, Clients, Events')));
   }
-  return root;
+  return h('div', { class: 'stack wide-stack' }, head, grid);
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const shortDate = (ms) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+// One card on the dashboard: the card's own colours on top, its address, numbers and actions below.
+function cardTile(entry) {
+  const card = entry.card;
+  const role = [card.title, card.company].filter(Boolean).join(' · ');
+  const badge = card.label || (entry.slug === '' && me.cards.length > 1 ? 'Main' : '');
+  return h('article', { class: `tile${entry.active ? '' : ' off'}` },
+    h('a', { class: `tile-head ${card.style || 'aurora'}`, href: `/share/${entry.id}`, style: themeVars(card), 'aria-label': `Share ${card.name}` },
+      avatarOf(card, 'vc-avatar small'),
+      h('span', { class: 'grow' }, h('span', { class: 'tile-name', dir: 'auto' }, card.name), role && h('span', { class: 'tile-role', dir: 'auto' }, role)),
+      h('span', { class: 'tile-badges' }, badge && h('span', { class: 'badge' }, badge), !entry.active && h('span', { class: 'badge off' }, 'Off'))),
+    h('div', { class: 'tile-body' },
+      h('a', { class: 'tile-link', href: cardPath(entry), target: '_blank', rel: 'noopener' }, icon('external'), h('span', {}, `${location.host}${cardPath(entry)}`)),
+      h('p', { class: 'tile-stats' },
+        h('span', {}, h('strong', {}, entry.views), entry.views === 1 ? ' view' : ' views'),
+        h('span', {}, h('strong', {}, entry.saves || 0), (entry.saves || 0) === 1 ? ' contact save' : ' contact saves'),
+        h('span', { class: 'muted' }, `Updated ${shortDate(entry.updatedAt)}`)),
+      h('div', { class: 'tile-actions' },
+        h('a', { class: 'btn small primary', href: `/edit/${entry.id}` }, icon('edit'), 'Edit'),
+        h('button', { class: 'btn small', onclick: () => copyText(cardUrl(entry)) }, icon('copy'), 'Copy'),
+        h('a', { class: 'btn small', href: `/share/${entry.id}` }, icon('qr'), 'QR'),
+        h('button', { class: 'btn small icon-only', 'aria-label': 'Statistics', title: 'Statistics', onclick: () => statsSheet(entry) }, icon('chart')),
+        h('button', { class: 'btn small icon-only', 'aria-label': 'More', title: 'More', onclick: () => cardMenu(entry) }, icon('more')))));
+}
+
+function cardMenu(entry) {
+  sheet((close) => [
+    h('h1', { dir: 'auto' }, entry.card.label || entry.card.name),
+    h('a', { class: 'btn block', href: `/share/${entry.id}`, onclick: close }, icon('share'), 'Share page and QR codes'),
+    h('a', { class: 'btn block', href: `/inbox/${entry.id}`, onclick: close }, icon('inbox'), entry.contacts ? `Contacts sent to you (${entry.contacts})` : 'Contacts sent to you'),
+    h('div', { class: 'row' }, qrDownloadButton(entry, 'png', 'QR as PNG', 'btn grow'), qrDownloadButton(entry, 'svg', 'QR as SVG', 'btn grow')),
+    walletButtons(entry),
+    h('button', { class: 'btn block', onclick: () => { close(); cardStatusSheet(entry); } }, icon('power'), entry.active ? 'Turn this card off' : 'Turn this card back on'),
+    h('button', { class: 'btn block', onclick: close }, 'Close'),
+  ].filter(Boolean));
+}
+
+// Switching a card off keeps its address working but shows a short notice instead of the details.
+function cardStatusSheet(entry, after) {
+  sheet((close) => {
+    const message = h('textarea', { class: 'input', rows: 3, maxlength: 400, placeholder: 'e.g. I have moved to a new role. Please contact the company for help.' }, entry.inactiveMessage || '');
+    const turnOn = !entry.active;
+    return [
+      h('h1', {}, turnOn ? 'Turn this card back on?' : 'Turn this card off?'),
+      h('p', { class: 'muted' }, turnOn ? 'Visitors will see the card and can save the contact again.'
+        : 'Visitors will see a short notice instead of the details, and can no longer save the contact. You can turn it back on at any time.'),
+      !turnOn && h('label', { class: 'field' }, h('span', {}, 'Message for visitors (optional)'), message),
+      h('button', { class: `btn block ${turnOn ? 'primary' : 'danger'}`, onclick: async () => {
+        try {
+          await api(`/cards/${entry.id}/status`, { method: 'POST', body: { active: turnOn, message: turnOn ? entry.inactiveMessage : message.value } });
+          entry.active = turnOn;
+          if (!turnOn) entry.inactiveMessage = message.value;
+          close();
+          toast(turnOn ? 'Card turned on' : 'Card turned off');
+          if (after) after(); else render();
+        } catch (err) { toast(err.message); }
+      } }, turnOn ? 'Turn on' : 'Turn off'),
+      h('button', { class: 'btn block', onclick: close }, 'Cancel'),
+    ].filter(Boolean);
+  });
+}
+
+const STAT_LABELS = [['view', 'Views'], ['save', 'Contact saves'], ['whatsapp', 'WhatsApp'], ['call', 'Calls'], ['email', 'Emails'], ['qr', 'QR opens'], ['share', 'Shares'], ['web', 'Website visits']];
+
+function statsSheet(entry) {
+  sheet((close) => {
+    const body = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading…'));
+    api(`/cards/${entry.id}/stats`).then(({ total, series }) => {
+      const max = Math.max(1, ...series.map((d) => d.view));
+      const W = 300, H = 120, bw = W / series.length;
+      const bars = series.map((d, i) => {
+        const vh = (d.view / max) * (H - 14), sh = (d.save / max) * (H - 14);
+        return `<rect x="${(i * bw + 1).toFixed(1)}" y="${(H - vh).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${vh.toFixed(1)}" rx="1.5" class="bar-view"><title>${d.day}: ${d.view} views</title></rect>`
+          + (d.save ? `<rect x="${(i * bw + bw * 0.25).toFixed(1)}" y="${(H - sh).toFixed(1)}" width="${(bw * 0.5).toFixed(1)}" height="${sh.toFixed(1)}" rx="1.5" class="bar-save"><title>${d.day}: ${d.save} saves</title></rect>` : '');
+      }).join('');
+      const chart = h('div', { class: 'chart' });
+      chart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Views and contact saves over the last 30 days">${bars}</svg>`;
+      body.replaceChildren(
+        h('div', { class: 'stat-grid' }, ...STAT_LABELS.map(([k, label]) => h('div', { class: 'stat' }, h('strong', {}, total[k] || 0), h('span', {}, label)))),
+        h('h2', {}, 'Last 30 days'),
+        chart,
+        h('p', { class: 'legend small muted' }, h('span', { class: 'dot view' }), 'Views ', h('span', { class: 'dot save' }), 'Contact saves'),
+        h('p', { class: 'small muted' }, 'Contact saves count "Save contact" taps on the card page. Scans of the printed or wallet QR code add the contact without visiting the page, so they cannot be counted.'));
+    }).catch((err) => body.replaceChildren(h('p', { class: 'error' }, err.message)));
+    return [h('p', { class: 'eyebrow' }, 'Statistics'), h('h1', { dir: 'auto' }, entry.card.label || entry.card.name), body, h('button', { class: 'btn block', onclick: close }, 'Close')];
+  });
 }
 
 function editorScreen(id) {
@@ -1020,7 +1105,24 @@ function publicScreen(username, slug = '') {
   const url = `${location.origin}/${username}${slug ? '/' + slug : ''}`;
   const root = h('div', { class: 'stack' }, h('section', { class: 'glass panel' }, h('p', { class: 'muted' }, 'Loading card…')));
 
-  api(`/public/card?${query}${mine ? '' : '&view'}`).then(({ card, contactEmail }) => {
+  // Count taps on the card's buttons (the owner's own visits are not counted by the server).
+  const track = (kind) => {
+    if (mine) return;
+    const body = JSON.stringify({ u: username, s: slug, kind });
+    try { if (navigator.sendBeacon && navigator.sendBeacon('/api/public/event', new Blob([body], { type: 'application/json' }))) return; } catch { /* fall back */ }
+    fetch('/api/public/event', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true }).catch(() => {});
+  };
+  root.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (!a || !root.contains(a) || !a.closest('.vc')) return;
+    const href = a.getAttribute('href');
+    const kind = href.startsWith('tel:') ? 'call' : href.startsWith('mailto:') ? 'email' : href.includes('wa.me/') ? 'whatsapp' : /^https?:/.test(href) ? 'web' : null;
+    if (kind) track(kind);
+  });
+
+  api(`/public/card?${query}${mine ? '' : '&view'}`).then((data) => {
+    if (data.inactive) { root.replaceChildren(inactiveCardScreen(data)); return; }
+    const { card, contactEmail } = data;
     document.title = `${card.name} — MK Cards`;
     // The page takes on the card's colours, like the reference design: a deep backdrop with a soft glow.
     document.body.classList.add('card-page');
@@ -1053,8 +1155,8 @@ function publicScreen(username, slug = '') {
         } }, w.other)),
         renderCard(card, { actions: { save: saveContact }, lang }),
         h('div', { class: 'vc-pills', dir: lang === 'ar' ? 'rtl' : 'ltr' },
-          h('button', { class: 'vc-pill', onclick: () => shareLink(shown, url, w.hereIs) }, icon('share'), w.share),
-          h('button', { class: 'vc-pill', onclick: () => cardQrSheet(shown, url, w) }, icon('qr'), w.qr),
+          h('button', { class: 'vc-pill', onclick: () => { track('share'); shareLink(shown, url, w.hereIs); } }, icon('share'), w.share),
+          h('button', { class: 'vc-pill', onclick: () => { track('qr'); cardQrSheet(shown, url, w); } }, icon('qr'), w.qr),
           !mine && h('button', { class: 'vc-pill', onclick: () => exchangeSheet(username, slug, shown, contactEmail, url) }, icon('mail'), w.send)),
         h('p', { class: 'vc-footer' }, me.user ? 'MK Cards' : h('a', { href: '/' }, 'MK Cards')),
       ].filter(Boolean));
@@ -1133,8 +1235,11 @@ function exchangeSheet(username, slug, card, contactEmail, cardLink) {
 
 function settingsScreen() {
   const appVersion = native && native.appVersion ? native.appVersion() : null;
+  const org = me.user.org;
   return h('div', { class: 'stack' },
-    topbar('Settings'),
+    h('header', { class: 'page-head' }, h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, 'Account'), h('h1', {}, 'Your account'))),
+    org && h('section', { class: 'glass panel stack' }, h('h2', {}, 'Company'),
+      h('div', { class: 'row' }, h('span', { class: 'grow' }, org.name), h('span', { class: 'pill' }, { owner: 'Owner', admin: 'Administrator', member: 'Member' }[org.role] || 'Member'))),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'Account'),
       h('div', { class: 'row' }, h('span', { class: 'grow' }, 'Username'), h('span', { class: 'pill' }, '@' + me.user.username)),
       h('div', { class: 'row' }, h('span', { class: 'grow' }, 'Email'), h('span', { class: 'muted small', style: 'overflow-wrap:anywhere;text-align:right' }, me.user.email)),
@@ -1218,6 +1323,266 @@ function confirmDeleteAccount() {
   });
 }
 
+// ---------- company administration ----------
+
+function adminScreen() {
+  const org = me.user.org;
+  const root = h('div', { class: 'stack wide-stack' });
+  if (!org) {
+    const name = h('input', { class: 'input', maxlength: 80, placeholder: 'Company name' });
+    root.append(
+      h('header', { class: 'page-head' }, h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, 'For companies'), h('h1', {}, 'Company workspace'),
+        h('p', { class: 'muted' }, 'Give your whole team matching MK Cards. Import people from a spreadsheet, keep everyone\'s details up to date, see how cards are used, and switch cards off when people leave.'))),
+      h('section', { class: 'glass panel stack narrow' }, h('h2', {}, 'Set up your company'),
+        h('label', { class: 'field' }, h('span', {}, 'Company name'), name),
+        h('button', { class: 'btn primary block', onclick: async () => {
+          try { me = await api('/org', { method: 'POST', body: { name: name.value } }); toast('Company workspace created'); render(); }
+          catch (err) { toast(err.message); }
+        } }, icon('building'), 'Create company workspace'),
+        h('p', { class: 'small muted' }, 'You become the owner and can add administrators. Your own cards stay as they are.')));
+    return root;
+  }
+  if (org.role !== 'admin' && org.role !== 'owner') {
+    root.append(h('header', { class: 'page-head' }, h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, 'Company'), h('h1', {}, org.name),
+      h('p', { class: 'muted' }, 'You are a member of this company workspace. Its administrators manage company cards and settings.'))));
+    return root;
+  }
+
+  root.append(h('section', { class: 'glass panel' }, h('p', { class: 'muted' }, 'Loading…')));
+  const load = async () => {
+    let data;
+    try { data = await api('/org'); } catch (err) { root.replaceChildren(h('section', { class: 'glass panel' }, h('p', { class: 'error' }, err.message))); return; }
+    const { org: info, members } = data;
+    const cards = members.flatMap((m) => m.cards);
+    const search = h('input', { class: 'input', type: 'search', placeholder: 'Search people', 'aria-label': 'Search people' });
+    const list = h('div', { class: 'member-list' });
+    const drawList = () => {
+      const q = search.value.trim().toLowerCase();
+      const shown = members.filter((m) => !q || [m.name, m.email, m.username, m.title, m.department].join(' ').toLowerCase().includes(q));
+      list.replaceChildren(...(shown.length ? shown.map((m) => memberRow(m, info, load, data.me)) : [h('p', { class: 'muted center' }, 'No one matches that search.')]));
+    };
+    search.addEventListener('input', drawList);
+    const fileInput = h('input', { type: 'file', accept: '.csv,text/csv', hidden: true, onchange: (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (file) importPeople(file, load);
+    } });
+    root.replaceChildren(
+      h('header', { class: 'page-head' },
+        h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, 'Admin'), h('h1', {}, info.name),
+          h('p', { class: 'muted' }, `Company workspace · ${info.plan === 'trial' ? 'Trial' : info.plan} plan`)),
+        h('div', { class: 'head-actions' },
+          h('button', { class: 'btn', onclick: () => orgSettingsSheet(info, load) }, icon('gear'), 'Company settings'),
+          h('button', { class: 'btn primary', onclick: () => fileInput.click() }, icon('upload'), 'Import people'), fileInput)),
+      h('div', { class: 'stat-grid wide' },
+        ...[[members.length, 'People'], [members.filter((m) => m.active).length, 'Active people'], [cards.filter((c) => c.active).length, 'Active cards'],
+          [cards.reduce((n, c) => n + c.views, 0), 'Card views'], [cards.reduce((n, c) => n + c.saves, 0), 'Contact saves']]
+          .map(([n, label]) => h('div', { class: 'stat glass' }, h('strong', {}, n), h('span', {}, label)))),
+      h('section', { class: 'glass panel stack' },
+        h('div', { class: 'row wrap' }, h('h2', { class: 'grow' }, 'People'),
+          h('button', { class: 'btn small', onclick: downloadTemplate }, icon('download'), 'Import template'),
+          h('a', { class: 'btn small', href: '/api/org/members.csv', download: 'mkcards-members.csv' }, icon('download'), 'Export people'),
+          h('a', { class: 'btn small', href: '/api/org/activity.csv', download: 'mkcards-company-activity.csv' }, icon('chart'), 'Activity CSV')),
+        search, list));
+    drawList();
+  };
+  load();
+  return root;
+}
+
+function memberRow(m, info, reload, myId) {
+  const status = !m.active ? ['Deactivated', 'off'] : m.pending ? ['Invited', 'pending'] : ['Active', 'on'];
+  const call = async (path, body, done) => {
+    try { const res = await api(path, { method: 'POST', body }); if (done) done(res); reload(); } catch (err) { toast(err.message); }
+  };
+  const isOwner = me.user.org.role === 'owner';
+  const details = h('div', { class: 'member-cards', hidden: true },
+    ...m.cards.map((c) => h('div', { class: 'row member-card' },
+      h('span', { class: 'grow' }, h('strong', {}, c.label || (c.slug === '' ? 'Main card' : c.slug)), ' ',
+        h('a', { href: `/${m.username}${c.slug ? '/' + c.slug : ''}`, target: '_blank', rel: 'noopener', class: 'small' }, `${location.host}/${m.username}${c.slug ? '/' + c.slug : ''}`),
+        h('span', { class: 'small muted' }, ` · ${plural(c.views, 'view')} · ${plural(c.saves, 'save')}`)),
+      h('button', { class: `btn small${c.active ? '' : ' primary'}`, onclick: () => call(`/cards/${c.id}/status`, { active: !c.active }) },
+        icon('power'), c.active ? 'Turn off' : 'Turn on'))));
+  return h('div', { class: `member${m.active ? '' : ' off'}` },
+    h('div', { class: 'member-main' },
+      h('span', { class: 'member-avatar' }, initials(m.name || m.username)),
+      h('div', { class: 'grow member-who' },
+        h('strong', { dir: 'auto' }, m.name || m.username), h('span', { class: 'small muted' }, m.email),
+        (m.title || m.department) && h('span', { class: 'small muted', dir: 'auto' }, [m.title, m.department].filter(Boolean).join(' · '))),
+      h('div', { class: 'member-meta' },
+        h('span', { class: `badge ${status[1]}` }, status[0]),
+        m.role !== 'member' && h('span', { class: 'badge role' }, m.role === 'owner' ? 'Owner' : 'Admin'),
+        h('span', { class: 'small muted' }, plural(m.cards.reduce((n, c) => n + c.views, 0), 'view'), ' · ', plural(m.cards.reduce((n, c) => n + c.saves, 0), 'save')))),
+    h('div', { class: 'member-actions' },
+      h('button', { class: 'btn small', onclick: () => { details.hidden = !details.hidden; } }, icon('cards'), `Cards (${m.cards.length})`),
+      m.id !== myId && m.role !== 'owner' && h('button', { class: `btn small${m.active ? ' danger' : ' primary'}`, onclick: () => {
+        if (m.active) {
+          sheet((close) => [
+            h('h1', {}, `Deactivate ${m.name || m.username}?`),
+            h('p', { class: 'muted' }, 'They can no longer log in, and all their cards switch off. Visitors see the company\'s "no longer with us" message and contact details instead. You can reactivate them at any time.'),
+            h('button', { class: 'btn danger block', onclick: () => { close(); call(`/org/members/${m.id}`, { active: false }); } }, 'Deactivate'),
+            h('button', { class: 'btn block', onclick: close }, 'Cancel'),
+          ]);
+        } else call(`/org/members/${m.id}`, { active: true });
+      } }, icon('power'), m.active ? 'Deactivate' : 'Reactivate'),
+      m.id !== myId && m.role !== 'owner' && m.active && h('button', { class: 'btn small', onclick: () => call(`/org/members/${m.id}/password`, {}, (res) => {
+        sheet((close) => [
+          h('h1', {}, 'Temporary password'),
+          h('p', { class: 'muted' }, `Give this to ${m.name || m.username}. They log in with username "${m.username}" and must choose a new password straight away. It is shown only once.`),
+          h('div', { class: 'linkbox center big' }, res.password),
+          h('button', { class: 'btn primary block', onclick: () => copyText(res.password) }, icon('copy'), 'Copy'),
+          h('button', { class: 'btn block', onclick: close }, 'Done'),
+        ]);
+      }) }, icon('key'), 'Reset password'),
+      isOwner && m.id !== myId && m.role !== 'owner' && h('button', { class: 'btn small', onclick: () => call(`/org/members/${m.id}`, { role: m.role === 'admin' ? 'member' : 'admin' }) },
+        icon('users'), m.role === 'admin' ? 'Make member' : 'Make admin')),
+    details);
+}
+
+const TEMPLATE_HEAD = ['email', 'name', 'title', 'department', 'mobile', 'office', 'whatsapp', 'role', 'name_ar', 'title_ar', 'department_ar', 'company_ar'];
+
+function downloadTemplate() {
+  const rows = [TEMPLATE_HEAD, ['sara.haddad@company.example', 'Sara Haddad', 'Senior Architect', 'Design', '+971 50 000 0001', '+971 4 000 0000', '+971500000001', 'member', 'سارة حداد', 'مهندسة معمارية أولى', 'التصميم', '']];
+  saveCsv(rows, 'mkcards-import-template.csv');
+}
+
+const csvLine = (r) => r.map((v) => (/[",\n\r]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''))).join(',');
+function saveCsv(rows, filename) {
+  const blob = new Blob(['﻿' + rows.map(csvLine).join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: filename });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// Reads a CSV file and sends it to the server ten people at a time, then shows what happened.
+async function importPeople(file, reload) {
+  const textIn = await file.text();
+  const rows = []; let row = [], cell = '', q = false;
+  const t = textIn.replace(/^﻿/, '');
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (q) { if (ch === '"' && t[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',' || ch === ';') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && t[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  const people = rows.filter((r) => r.some((c) => c.trim()));
+  if (people.length < 2) return toast('That file has no people in it. Use the import template.');
+  const [head, ...body] = people;
+  const progress = h('p', { class: 'muted' }, `Adding 0 of ${body.length}…`);
+  const close = sheet(() => [h('h1', {}, 'Importing people'), progress]);
+  const results = [];
+  for (let i = 0; i < body.length; i += 10) {
+    try {
+      const res = await api('/org/import', { method: 'POST', body: { csv: [head, ...body.slice(i, i + 10)].map(csvLine).join('\n') } });
+      results.push(...res.results);
+    } catch (err) {
+      results.push(...body.slice(i, i + 10).map((r) => ({ email: r[head.indexOf('email')] || '', status: 'error', reason: err.message })));
+    }
+    progress.textContent = `Adding ${Math.min(i + 10, body.length)} of ${body.length}…`;
+  }
+  close();
+  const created = results.filter((r) => r.status === 'created');
+  const updated = results.filter((r) => r.status === 'updated');
+  const failed = results.filter((r) => r.status === 'error');
+  sheet((done) => [
+    h('h1', {}, 'Import finished'),
+    h('div', { class: 'stat-grid' }, h('div', { class: 'stat' }, h('strong', {}, created.length), h('span', {}, 'Added')),
+      h('div', { class: 'stat' }, h('strong', {}, updated.length), h('span', {}, 'Updated')), h('div', { class: 'stat' }, h('strong', {}, failed.length), h('span', {}, 'Not added'))),
+    created.length && h('p', { class: 'muted' }, 'New people get a temporary password and must choose their own when they first log in. Download the sign-in details now: the passwords are shown only once.'),
+    created.length && h('button', { class: 'btn primary block', onclick: () => saveCsv([['email', 'name', 'username', 'temporary_password', 'card_link', 'login_page'],
+      ...created.map((r) => [r.email, r.name, r.username, r.password, r.link, `${location.origin}/login`])], 'mkcards-sign-in-details.csv') }, icon('download'), 'Download sign-in details'),
+    failed.length && h('div', { class: 'stack' }, h('h2', {}, 'Not added'),
+      ...failed.map((r) => h('p', { class: 'small' }, h('strong', {}, r.email || '(no email)'), ` — ${r.reason}`))),
+    h('button', { class: 'btn block', onclick: () => { done(); reload(); } }, 'Done'),
+  ].filter(Boolean));
+}
+
+function orgSettingsSheet(info, reload) {
+  sheet((close) => {
+    const s = { ...info.settings };
+    const field = (label, key, attrs = {}) => h('label', { class: 'field' }, h('span', {}, label),
+      h(attrs.rows ? 'textarea' : 'input', { class: 'input', value: s[key] || '', ...attrs, oninput: (e) => { s[key] = e.target.value; } }));
+    const name = h('input', { class: 'input', value: info.name, maxlength: 80 });
+    const swatches = h('div', { class: 'swatches' });
+    const draw = () => swatches.replaceChildren(...COLOURS.map(([c, n]) => h('button', { class: 'swatch', type: 'button', style: `background:${c}`, title: n, 'aria-label': n,
+      'aria-pressed': String(s.accent === c), onclick: () => { s.accent = c; draw(); } })));
+    draw();
+    return [
+      h('h1', {}, 'Company settings'),
+      h('label', { class: 'field' }, h('span', {}, 'Company name'), name),
+      h('div', { class: 'field' }, h('span', {}, 'Colour for new people\'s cards'), swatches),
+      h('h2', {}, 'When someone leaves'),
+      field('Message on their card', 'leftMessage', { rows: 3, maxlength: 400, placeholder: info.defaultMessage }),
+      h('p', { class: 'small muted' }, '{name} and {company} are filled in automatically. Visitors also see the contact details below.'),
+      field('Company email', 'contactEmail', { type: 'email', maxlength: 120 }),
+      field('Company phone', 'contactPhone', { type: 'tel', maxlength: 40 }),
+      field('Company website', 'website', { type: 'url', maxlength: 300, placeholder: 'https://' }),
+      h('button', { class: 'btn primary block', onclick: async () => {
+        try { await api('/org', { method: 'PUT', body: { name: name.value, settings: s } }); me.user.org.name = name.value; close(); toast('Settings saved'); reload(); }
+        catch (err) { toast(err.message); }
+      } }, 'Save'),
+      h('button', { class: 'btn block', onclick: close }, 'Cancel'),
+    ];
+  });
+}
+
+// ---------- first sign-in for invited people ----------
+
+function setPasswordScreen() {
+  const err = h('p', { class: 'error', role: 'alert', hidden: true });
+  const button = h('button', { class: 'btn primary block', type: 'submit' }, 'Save my password');
+  return h('form', { class: 'stack narrow', novalidate: true, onsubmit: async (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    err.hidden = true;
+    try {
+      if (d.next !== d.again) throw new Error('The two new passwords do not match.');
+      button.disabled = true;
+      await api('/me/password', { method: 'POST', body: { current: d.current, next: d.next } });
+      me.user.mustChange = false;
+      toast('Password saved. Welcome to MK Cards!');
+      go('/');
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; button.disabled = false; }
+  } },
+    h('header', { class: 'page-head' }, h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, me.user.org ? me.user.org.name : 'Welcome'), h('h1', {}, 'Choose your password'),
+      h('p', { class: 'muted' }, 'Your account was set up for you. Choose your own password to continue.'))),
+    h('section', { class: 'glass panel stack' },
+      h('input', { type: 'text', name: 'username', autocomplete: 'username', value: me.user.username, hidden: true }),
+      h('label', { class: 'field' }, h('span', {}, 'Temporary password'), h('input', { class: 'input', name: 'current', type: 'password', autocomplete: 'current-password', required: true })),
+      h('label', { class: 'field' }, h('span', {}, 'New password'), h('input', { class: 'input', name: 'next', type: 'password', autocomplete: 'new-password', minlength: 8, required: true }),
+        h('p', { class: 'small muted' }, 'At least 8 characters.')),
+      h('label', { class: 'field' }, h('span', {}, 'New password again'), h('input', { class: 'input', name: 'again', type: 'password', autocomplete: 'new-password', required: true })),
+      err, button));
+}
+
+// What visitors see when a card has been switched off.
+function inactiveCardScreen(data) {
+  const { card, message, contact } = data;
+  document.body.classList.add('card-page');
+  document.body.setAttribute('style', themeVars(card));
+  document.documentElement.style.background = cardTheme(card).page;
+  const rows = contact ? [
+    contact.email && ['mail', 'Email', contact.email, 'mailto:' + contact.email],
+    contact.phone && ['phone', 'Phone', contact.phone, telHref(contact.phone)],
+    contact.website && ['globe', 'Website', prettyUrl(contact.website), contact.website],
+  ].filter(Boolean) : [];
+  return h('div', { class: `vc ${card.style || 'aurora'}`, style: themeVars(card) },
+    h('article', { class: 'vc-hero vc-glass' },
+      card.company && h('p', { class: 'vc-eyebrow' }, card.company),
+      h('h2', { class: 'vc-name' }, card.name),
+      h('span', { class: 'vc-rule', 'aria-hidden': 'true' }),
+      h('p', { class: 'vc-title' }, 'This card is no longer active'),
+      h('p', { class: 'vc-bio' }, message)),
+    rows.length && h('section', { class: 'vc-details vc-glass' }, h('div', { class: 'vc-group' },
+      ...rows.map(([ic, label, value, href]) => h('a', { class: 'vc-row', href, target: /^https?:/.test(href) ? '_blank' : null, rel: 'noopener' },
+        h('span', { class: 'vc-ico' }, solidIcon(ic)), h('span', { class: 'grow' }, h('small', {}, label), h('bdi', {}, value)), h('span', { class: 'vc-chev' }, icon('chevron')))))),
+    h('p', { class: 'vc-footer' }, 'MK Cards'));
+}
+
 function missingScreen(message, title = 'Card not found') {
   return h('section', { class: 'glass hero' }, h('h1', {}, title), h('p', {}, message),
     h('a', { class: 'btn primary', href: '/' }, 'Go to MK Cards'));
@@ -1234,7 +1599,10 @@ const routes = [
   [/^\/edit\/([a-z0-9]+)$/, editorScreen, 'home', 'user'],
   [/^\/share\/([a-z0-9]+)$/, shareScreen, 'home', 'user'],
   [/^\/inbox\/([a-z0-9]+)$/, inboxScreen, 'home', 'user'],
-  [/^\/settings$/, settingsScreen, 'settings', 'user'],
+  [/^\/account$/, settingsScreen, 'account', 'user'],
+  [/^\/settings$/, settingsScreen, 'account', 'user'],
+  [/^\/admin$/, adminScreen, 'admin', 'user'],
+  [/^\/welcome-password$/, setPasswordScreen, null, 'user'],
   [/^\/([a-z0-9][a-z0-9_-]{2,29})(?:\/([a-z0-9][a-z0-9-]{0,29}))?$/, publicScreen, null, null],
 ];
 
@@ -1251,6 +1619,8 @@ function render() {
     if (!m) continue;
     if (who === 'user' && !me.user) { history.replaceState(null, '', '/login'); return render(); }
     if (who === 'guest' && me.user) { history.replaceState(null, '', '/'); return render(); }
+    // People invited by their company choose their own password before anything else.
+    if (me.user && me.user.mustChange && view !== setPasswordScreen && view !== publicScreen) { history.replaceState(null, '', '/welcome-password'); return render(); }
     try {
       screen = view(m[1], m[2]);
     } catch (err) {
@@ -1264,10 +1634,19 @@ function render() {
     break;
   }
   app.replaceChildren(screen);
-  // The tab bar is for people who are logged in; visitors get a clean page.
-  tabbar.hidden = !me.user;
-  tabbar.replaceChildren(...[['home', '/', 'cards', 'Cards'], ['new', '/new', 'plus', 'New'], ['settings', '/settings', 'gear', 'Settings']]
-    .map(([name, href, iconName, label]) => h('a', { href, 'aria-current': tab === name ? 'page' : null }, icon(iconName), label)));
+  // The top navigation is for people who are logged in; card pages and visitors get a clean page.
+  document.body.classList.toggle('wide', tab === 'home' || tab === 'admin');
+  tabbar.hidden = !me.user || tab === null;
+  if (me.user) {
+    const main = me.cards.find((c) => c.slug === '') || me.cards[0];
+    const adminLabel = me.user.org && me.user.org.role !== 'member' ? 'Admin' : 'Company';
+    tabbar.replaceChildren(h('nav', { class: 'topnav-inner glass', 'aria-label': 'Main' },
+      h('a', { class: 'brand', href: '/' }, logo(), h('span', {}, 'MK Cards')),
+      h('div', { class: 'topnav-links' },
+        ...[['home', '/', 'My cards'], ['account', '/account', 'Account'], ['admin', '/admin', adminLabel]]
+          .map(([name, href, label]) => h('a', { href, 'aria-current': tab === name || (name === 'home' && tab === 'new') ? 'page' : null }, label))),
+      h('a', { class: 'topnav-avatar', href: '/account', title: me.user.username, 'aria-label': 'Account' }, initials(main ? main.card.name : me.user.username))));
+  }
   window.scrollTo(0, 0);
 }
 

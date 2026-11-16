@@ -25,7 +25,24 @@ CREATE TABLE IF NOT EXISTS media (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, card_id TEXT, kind TEXT NOT NULL, type TEXT NOT NULL,
   data BLOB NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS media_card ON media (card_id, kind);
+CREATE TABLE IF NOT EXISTS orgs (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}', plan TEXT NOT NULL DEFAULT 'trial',
+  created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS events (card_id TEXT NOT NULL, kind TEXT NOT NULL, day TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS events_card_day ON events (card_id, day);
 `;
+// Columns added after the first release, created on start-up when missing.
+const ADDED_COLUMNS = [
+  ['users', 'active', 'INTEGER NOT NULL DEFAULT 1'],
+  ['users', 'must_change', 'INTEGER NOT NULL DEFAULT 0'],
+  ['users', 'org_id', 'TEXT'],
+  ['users', 'role', 'TEXT'],
+  ['users', 'last_login', 'INTEGER'],
+  ['cards', 'active', 'INTEGER NOT NULL DEFAULT 1'],
+  ['cards', 'inactive_message', 'TEXT'],
+];
+// orgs are company workspaces: users.org_id and users.role ('owner', 'admin' or 'member') place people in one.
+// events records what visitors do with a card (view, save, whatsapp, email, call, qr, share, web), per day.
 // media holds images, apart from the card records: kind 'photo' is the card's photo; 'og', 'thumb' and 'hero'
 // are pictures drawn from the card for link previews and wallet passes. They are served at /media/<id>.<ext>.
 // In cards, slug '' is the user's main card, shown at /username. Other cards live at /username/slug.
@@ -36,10 +53,20 @@ export class Store extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     ctx.storage.sql.exec(SCHEMA);
+    this.addColumns();
     try {
       this.moveInlinePhotos();
     } catch (err) {
       console.error('Moving inline photos failed; cards keep their photos where they are.', err);
+    }
+  }
+
+  addColumns() {
+    const sql = this.ctx.storage.sql;
+    const have = {};
+    for (const [table, column, type] of ADDED_COLUMNS) {
+      have[table] ||= new Set(sql.exec(`PRAGMA table_info(${table})`).toArray().map((c) => c.name));
+      if (!have[table].has(column)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }
   }
 
@@ -191,6 +218,15 @@ async function api(request, env, url) {
   if (path === '/public/card' && method === 'GET') return publicCard(env, url);
   if (path === '/public/vcard' && method === 'GET') return publicVCard(env, url);
   if (path === '/public/contacts' && method === 'POST') return addContact(request, env);
+  if (path === '/public/event' && method === 'POST') return recordEvent(request, env);
+  if (path === '/me/activity.csv' && method === 'GET') return activityCsv(request, env, url, false);
+
+  if (path === '/org' && method === 'GET') return orgOverview(request, env, url);
+  if (path === '/org' && method === 'POST') return createOrg(request, env);
+  if (path === '/org' && method === 'PUT') return updateOrg(request, env);
+  if (path === '/org/import' && method === 'POST') return importMembers(request, env, url);
+  if (path === '/org/members.csv' && method === 'GET') return membersCsv(request, env, url);
+  if (path === '/org/activity.csv' && method === 'GET') return activityCsv(request, env, url, true);
 
   if (path === '/me' && method === 'GET') return me(request, env);
   if (path === '/me' && method === 'DELETE') return deleteAccount(request, env, url);
@@ -200,6 +236,14 @@ async function api(request, env, url) {
   let m = /^\/cards\/([a-z0-9]{6,20})$/.exec(path);
   if (m && method === 'PUT') return updateCard(request, env, m[1]);
   if (m && method === 'DELETE') return deleteCard(request, env, m[1]);
+  m = /^\/cards\/([a-z0-9]{6,20})\/stats$/.exec(path);
+  if (m && method === 'GET') return cardStats(request, env, m[1]);
+  m = /^\/cards\/([a-z0-9]{6,20})\/status$/.exec(path);
+  if (m && method === 'POST') return setCardStatus(request, env, m[1]);
+  m = /^\/org\/members\/([a-z0-9]{16})$/.exec(path);
+  if (m && method === 'POST') return updateMember(request, env, m[1]);
+  m = /^\/org\/members\/([a-z0-9]{16})\/password$/.exec(path);
+  if (m && method === 'POST') return resetMemberPassword(request, env, m[1]);
   m = /^\/cards\/([a-z0-9]{6,20})\/assets$/.exec(path);
   if (m && method === 'PUT') return saveCardAssets(request, env, m[1]);
   m = /^\/cards\/([a-z0-9]{6,20})\/wallet\/(apple\.pkpass|google)$/.exec(path);
@@ -242,7 +286,7 @@ async function register(request, env, url) {
   const user = { id: randomId(16), username, email };
   await env.DB.prepare('INSERT INTO users (id, username, email, pass_hash, created_at) VALUES (?, ?, ?, ?, ?)')
     .bind(user.id, username, email, await hashPassword(password), Date.now()).run();
-  return json({ user: publicUser(user), cards: [], wallet: walletStatus(env) }, 201, { 'set-cookie': await startSession(env, url, user.id) });
+  return json({ user: publicUser({ ...user, must_change: 0 }), cards: [], wallet: walletStatus(env) }, 201, { 'set-cookie': await startSession(env, url, user.id) });
 }
 
 async function login(request, env, url) {
@@ -258,15 +302,17 @@ async function login(request, env, url) {
     throw new HttpError(429, 'Too many wrong passwords for this account. Please wait 15 minutes and try again.');
   }
 
-  const user = await env.DB.prepare('SELECT id, username, email, pass_hash FROM users WHERE username = ? OR email = ?')
+  const user = await env.DB.prepare('SELECT id, username, email, pass_hash, active FROM users WHERE username = ? OR email = ?')
     .bind(name, name).first();
   if (!user || !(await verifyPassword(password, user.pass_hash))) {
     await recordAttempt(env, request, 'login');
     await addAttempt(env, accountKey);
     throw new HttpError(401, 'Wrong username or password.');
   }
-  return json({ user: publicUser(user), cards: await cardsOf(env, user.id), wallet: walletStatus(env) }, 200,
-    { 'set-cookie': await startSession(env, url, user.id) });
+  if (!user.active) throw new HttpError(403, 'This account has been deactivated by your company administrator.');
+  await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?').bind(Date.now(), user.id).run();
+  const cookieHeader = await startSession(env, url, user.id);
+  return json(await accountState(env, await userById(env, user.id)), 200, { 'set-cookie': cookieHeader });
 }
 
 async function logout(request, env, url) {
@@ -284,10 +330,25 @@ async function usernameAvailable(env, url) {
 }
 
 async function me(request, env) {
-  const wallet = walletStatus(env);
   const user = await currentUser(request, env);
-  if (!user) return json({ user: null, cards: [], wallet });
-  return json({ user: publicUser(user), cards: await cardsOf(env, user.id), wallet });
+  if (!user) return json({ user: null, cards: [], wallet: walletStatus(env) });
+  return json(await accountState(env, user));
+}
+
+// Everything the app needs about the person who is logged in.
+async function accountState(env, user) {
+  let org = null;
+  if (user.org_id) {
+    const row = await env.DB.prepare('SELECT id, name, plan FROM orgs WHERE id = ?').bind(user.org_id).first();
+    if (row) org = { id: row.id, name: row.name, plan: row.plan, role: user.role || 'member' };
+  }
+  return { user: { ...publicUser(user), org }, cards: await cardsOf(env, user.id), wallet: walletStatus(env) };
+}
+
+const USER_FIELDS = 'u.id, u.username, u.email, u.active, u.must_change, u.org_id, u.role';
+
+async function userById(env, id) {
+  return env.DB.prepare(`SELECT ${USER_FIELDS} FROM users u WHERE u.id = ?`).bind(id).first();
 }
 
 async function deleteAccount(request, env, url) {
@@ -297,7 +358,12 @@ async function deleteAccount(request, env, url) {
   if (!(await verifyPassword(typeof body.password === 'string' ? body.password : '', row.pass_hash))) {
     throw new HttpError(403, 'That password is not correct.');
   }
+  if (user.role === 'owner') {
+    const others = await env.DB.prepare('SELECT COUNT(*) AS n FROM users WHERE org_id = ? AND id != ?').bind(user.org_id, user.id).first();
+    if (others.n) throw new HttpError(409, 'You own a company workspace with other members. Make another person the owner first.');
+  }
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM events WHERE card_id IN (SELECT id FROM cards WHERE user_id = ?)').bind(user.id),
     env.DB.prepare('DELETE FROM contacts WHERE card_id IN (SELECT id FROM cards WHERE user_id = ?)').bind(user.id),
     env.DB.prepare('DELETE FROM media WHERE user_id = ?').bind(user.id),
     env.DB.prepare('DELETE FROM cards WHERE user_id = ?').bind(user.id),
@@ -320,20 +386,20 @@ async function changePassword(request, env) {
   // Other devices are signed out; this one stays logged in.
   const keep = await sha256(readCookie(request, SESSION_COOKIE));
   await env.DB.batch([
-    env.DB.prepare('UPDATE users SET pass_hash = ? WHERE id = ?').bind(await hashPassword(next), user.id),
+    env.DB.prepare('UPDATE users SET pass_hash = ?, must_change = 0 WHERE id = ?').bind(await hashPassword(next), user.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').bind(user.id, keep),
   ]);
   return json({ ok: true });
 }
 
-const publicUser = (user) => ({ username: user.username, email: user.email });
+const publicUser = (user) => ({ username: user.username, email: user.email, mustChange: Boolean(user.must_change) });
 
 async function currentUser(request, env) {
   const token = readCookie(request, SESSION_COOKIE);
   if (!token) return null;
   return env.DB.prepare(
-    `SELECT u.id, u.username, u.email FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = ? AND s.expires_at > ?`,
+    `SELECT ${USER_FIELDS} FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1`,
   ).bind(await sha256(token), Date.now()).first();
 }
 
@@ -416,8 +482,9 @@ const recordAttempt = (env, request, kind) => addAttempt(env, ipKey(request, kin
 
 async function cardsOf(env, userId) {
   const { results } = await env.DB.prepare(
-    `SELECT c.id, c.slug, c.data, c.views, c.updated_at,
+    `SELECT c.id, c.slug, c.data, c.views, c.updated_at, c.active, c.inactive_message,
             (SELECT COUNT(*) FROM contacts k WHERE k.card_id = c.id) AS contacts,
+            (SELECT COUNT(*) FROM events e WHERE e.card_id = c.id AND e.kind = 'save') AS saves,
             (SELECT MAX(created_at) FROM media m WHERE m.card_id = c.id AND m.kind = 'og') AS assets_at
      FROM cards c WHERE c.user_id = ? ORDER BY c.slug = '' DESC, c.created_at`,
   ).bind(userId).all();
@@ -426,7 +493,7 @@ async function cardsOf(env, userId) {
 
 const cardRow = (r) => ({
   id: r.id, slug: r.slug, card: readCard(r.data), views: r.views || 0, contacts: r.contacts || 0, updatedAt: r.updated_at,
-  assetsAt: r.assets_at || 0,
+  assetsAt: r.assets_at || 0, saves: r.saves || 0, active: r.active !== 0, inactiveMessage: r.inactive_message || '',
 });
 
 async function createCard(request, env) {
@@ -455,7 +522,7 @@ async function createCard(request, env) {
   await keepPhoto(env, user.id, id, card);
   await env.DB.prepare('INSERT INTO cards (id, user_id, slug, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(id, user.id, slug, JSON.stringify(card), now, now).run();
-  return json({ id, slug, card, views: 0, contacts: 0, updatedAt: now, assetsAt: 0 }, 201);
+  return json({ id, slug, card, views: 0, contacts: 0, saves: 0, active: true, inactiveMessage: '', updatedAt: now, assetsAt: 0 }, 201);
 }
 
 async function ownCard(request, env, id) {
@@ -478,10 +545,364 @@ async function deleteCard(request, env, id) {
   await ownCard(request, env, id);
   await env.DB.batch([
     env.DB.prepare('DELETE FROM contacts WHERE card_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM events WHERE card_id = ?').bind(id),
     env.DB.prepare('DELETE FROM media WHERE card_id = ?').bind(id),
     env.DB.prepare('DELETE FROM cards WHERE id = ?').bind(id),
   ]);
   return json({ ok: true });
+}
+
+// ---------- analytics ----------
+
+const EVENT_KINDS = new Set(['whatsapp', 'email', 'call', 'qr', 'share', 'web']);
+const today = () => new Date().toISOString().slice(0, 10);
+const trackStatement = (env, cardId, kind) =>
+  env.DB.prepare('INSERT INTO events (card_id, kind, day, at) VALUES (?, ?, ?, ?)').bind(cardId, kind, today(), Date.now());
+
+// Taps on a card page (WhatsApp, email, call, QR, share, website), sent by the page as they happen.
+async function recordEvent(request, env) {
+  const body = await readJson(request, 2000);
+  if (!EVENT_KINDS.has(body.kind)) throw new HttpError(400, 'Unknown event.');
+  const row = await findCard(env, body.u, body.s);
+  if (!row || !row.active) return json({ ok: true });
+  const viewer = await currentUser(request, env);
+  if (viewer && viewer.id === row.user_id) return json({ ok: true }); // the owner's own taps do not count
+  await trackStatement(env, row.id, body.kind).run();
+  return json({ ok: true });
+}
+
+async function cardStats(request, env, id) {
+  const row = await manageableCard(request, env, id);
+  const days = 30;
+  const since = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
+  const [totals, daily, card] = await env.DB.batch([
+    env.DB.prepare('SELECT kind, COUNT(*) AS n FROM events WHERE card_id = ? GROUP BY kind').bind(id),
+    env.DB.prepare('SELECT day, kind, COUNT(*) AS n FROM events WHERE card_id = ? AND day >= ? GROUP BY day, kind').bind(id, since),
+    env.DB.prepare('SELECT views FROM cards WHERE id = ?').bind(id),
+  ]);
+  const total = Object.fromEntries(totals.map((t) => [t.kind, t.n]));
+  total.view = Math.max(total.view || 0, card[0] ? card[0].views : 0); // views counted before events existed
+  const series = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const on = daily.filter((d) => d.day === day);
+    const count = (kind) => (on.find((d) => d.kind === kind) || { n: 0 }).n;
+    series.push({ day, view: count('view'), save: count('save') });
+  }
+  return json({ id: row.id, total, series });
+}
+
+const csvCell = (v) => {
+  const t = String(v ?? '');
+  return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+};
+const csv = (rows) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+const csvResponse = (text, filename) => new Response('﻿' + text, {
+  headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${filename}"`, 'cache-control': 'no-store' },
+});
+
+// Day-by-day activity for the user's cards, or for every card in the company (admins).
+async function activityCsv(request, env, url, wholeOrg) {
+  const user = await requireUser(request, env);
+  if (wholeOrg) requireAdminRole(user);
+  const { results: cards } = await env.DB.prepare(
+    `SELECT c.id, c.slug, c.data, u.username FROM cards c JOIN users u ON u.id = c.user_id WHERE ${wholeOrg ? 'u.org_id = ?' : 'c.user_id = ?'}`,
+  ).bind(wholeOrg ? user.org_id : user.id).all();
+  const kinds = ['view', 'save', 'whatsapp', 'email', 'call', 'qr', 'share', 'web'];
+  const rows = [['date', ...(wholeOrg ? ['username'] : []), 'card', 'link', 'views', 'contact_saves', 'whatsapp', 'email', 'call', 'qr_opens', 'shares', 'website']];
+  for (const c of cards) {
+    const { results } = await env.DB.prepare('SELECT day, kind, COUNT(*) AS n FROM events WHERE card_id = ? GROUP BY day, kind ORDER BY day').bind(c.id).all();
+    const byDay = {};
+    for (const r of results) (byDay[r.day] ||= {})[r.kind] = r.n;
+    const card = readCard(c.data);
+    for (const [day, counts] of Object.entries(byDay)) {
+      rows.push([day, ...(wholeOrg ? [c.username] : []), card.label || card.name, `${url.origin}/${c.username}${c.slug ? '/' + c.slug : ''}`, ...kinds.map((k) => counts[k] || 0)]);
+    }
+  }
+  const head = rows.shift();
+  rows.sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
+  return csvResponse(csv([head, ...rows]), wholeOrg ? 'mkcards-company-activity.csv' : 'mkcards-activity.csv');
+}
+
+// ---------- card status (active / inactive) ----------
+
+// The card owner, or an admin of the company the owner belongs to.
+async function manageableCard(request, env, id) {
+  const user = await requireUser(request, env);
+  const row = await env.DB.prepare('SELECT c.id, c.slug, c.user_id, u.org_id FROM cards c JOIN users u ON u.id = c.user_id WHERE c.id = ?').bind(id).first();
+  const admin = user.org_id && row && row.org_id === user.org_id && (user.role === 'admin' || user.role === 'owner');
+  if (!row || (row.user_id !== user.id && !admin)) throw new HttpError(404, 'Card not found.');
+  return { ...row, user };
+}
+
+async function setCardStatus(request, env, id) {
+  await manageableCard(request, env, id);
+  const body = await readJson(request);
+  await env.DB.prepare('UPDATE cards SET active = ?, inactive_message = ? WHERE id = ?')
+    .bind(body.active ? 1 : 0, text(body.message, 400) || null, id).run();
+  return json({ ok: true, active: Boolean(body.active) });
+}
+
+const DEFAULT_LEFT_MESSAGE = '{name} is no longer with {company}. For assistance, please contact {company} using the details below.';
+
+// What a visitor sees when a card has been switched off, for example because its holder left the company.
+async function inactiveNotice(env, row) {
+  const card = readCard(row.data);
+  let org = null;
+  if (row.org_id) {
+    const o = await env.DB.prepare('SELECT name, data FROM orgs WHERE id = ?').bind(row.org_id).first();
+    if (o) org = { name: o.name, ...JSON.parse(o.data || '{}') };
+  }
+  const company = (org && org.name) || card.company || '';
+  const template = row.inactive_message || (org && org.leftMessage) || (company ? DEFAULT_LEFT_MESSAGE : 'This card is no longer active.');
+  const message = template.replace(/\{name\}/g, card.name).replace(/\{company\}/g, company || 'the company');
+  return {
+    inactive: true,
+    card: { name: card.name, company, accent: (org && org.accent) || card.accent, style: card.style, ar: {} },
+    message,
+    contact: org ? { email: org.contactEmail || '', phone: org.contactPhone || '', website: org.website || '' } : null,
+  };
+}
+
+// ---------- company workspaces ----------
+
+function requireAdminRole(user) {
+  if (!user.org_id || (user.role !== 'admin' && user.role !== 'owner')) throw new HttpError(403, 'Only company administrators can do this.');
+}
+
+const ORG_SETTINGS = { accent: 7, leftMessage: 400, contactEmail: 120, contactPhone: 40, website: 300 };
+function cleanOrgSettings(input) {
+  const out = {};
+  for (const [key, max] of Object.entries(ORG_SETTINGS)) out[key] = text(input && input[key], max);
+  if (!/^#[0-9a-f]{6}$/i.test(out.accent)) out.accent = '#2a5ba8';
+  if (out.website) out.website = safeUrl(out.website);
+  return out;
+}
+
+async function createOrg(request, env) {
+  const user = await requireUser(request, env);
+  if (user.org_id) throw new HttpError(409, 'You are already part of a company workspace.');
+  const body = await readJson(request);
+  const name = text(body.name, 80);
+  if (!name) throw new HttpError(400, 'Enter the company name.');
+  const id = randomId(12);
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO orgs (id, name, data, plan, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(id, name, JSON.stringify(cleanOrgSettings({})), 'trial', Date.now()),
+    env.DB.prepare("UPDATE users SET org_id = ?, role = 'owner' WHERE id = ?").bind(id, user.id),
+  ]);
+  return json(await accountState(env, await userById(env, user.id)), 201);
+}
+
+async function updateOrg(request, env) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const body = await readJson(request);
+  const name = text(body.name, 80);
+  if (!name) throw new HttpError(400, 'Enter the company name.');
+  await env.DB.prepare('UPDATE orgs SET name = ?, data = ? WHERE id = ?').bind(name, JSON.stringify(cleanOrgSettings(body.settings)), user.org_id).run();
+  return json({ ok: true });
+}
+
+async function orgMembers(env, orgId) {
+  const [users, cards] = await env.DB.batch([
+    env.DB.prepare('SELECT id, username, email, active, role, must_change, last_login, created_at FROM users WHERE org_id = ? ORDER BY created_at').bind(orgId),
+    env.DB.prepare(
+      `SELECT c.id, c.user_id, c.slug, c.data, c.active, c.views,
+              (SELECT COUNT(*) FROM events e WHERE e.card_id = c.id AND e.kind = 'save') AS saves
+       FROM cards c JOIN users u ON u.id = c.user_id WHERE u.org_id = ? ORDER BY c.slug = '' DESC, c.created_at`,
+    ).bind(orgId),
+  ]);
+  return users.map((u) => {
+    const own = cards.filter((c) => c.user_id === u.id).map((c) => {
+      const card = readCard(c.data);
+      return { id: c.id, slug: c.slug, label: card.label, name: card.name, title: card.title, department: card.department,
+        phones: card.phones, whatsapp: card.whatsapp, active: c.active !== 0, views: c.views || 0, saves: c.saves || 0 };
+    });
+    const main = own.find((c) => c.slug === '') || own[0] || {};
+    return {
+      id: u.id, username: u.username, email: u.email, active: u.active !== 0, role: u.role || 'member',
+      pending: Boolean(u.must_change), lastLogin: u.last_login || 0, name: main.name || '', title: main.title || '',
+      department: main.department || '', cards: own,
+    };
+  });
+}
+
+async function orgOverview(request, env) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const org = await env.DB.prepare('SELECT id, name, data, plan, created_at FROM orgs WHERE id = ?').bind(user.org_id).first();
+  return json({
+    org: { id: org.id, name: org.name, plan: org.plan, settings: cleanOrgSettings(JSON.parse(org.data || '{}')), defaultMessage: DEFAULT_LEFT_MESSAGE },
+    members: await orgMembers(env, user.org_id),
+    me: user.id,
+  });
+}
+
+async function membersCsv(request, env, url) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const members = await orgMembers(env, user.org_id);
+  const rows = [['email', 'username', 'name', 'title', 'department', 'mobile', 'office', 'whatsapp', 'role', 'status', 'card_link', 'views', 'contact_saves']];
+  for (const m of members) {
+    const main = m.cards.find((c) => c.slug === '') || {};
+    const phone = (label) => ((main.phones || []).find((p) => p.label === label) || {}).value || '';
+    rows.push([m.email, m.username, m.name, m.title, m.department, phone('mobile'), phone('work'), main.whatsapp || '', m.role,
+      m.active ? (m.pending ? 'invited' : 'active') : 'deactivated', `${url.origin}/${m.username}`,
+      m.cards.reduce((n, c) => n + c.views, 0), m.cards.reduce((n, c) => n + c.saves, 0)]);
+  }
+  return csvResponse(csv(rows), 'mkcards-members.csv');
+}
+
+// A small CSV reader (quoted fields, commas and new lines inside quotes).
+function parseCsv(textIn) {
+  const rows = [];
+  let row = [], cell = '', quoted = false;
+  const t = String(textIn).replace(/^﻿/, '');
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (quoted) {
+      if (ch === '"' && t[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') quoted = false; else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',' || ch === ';') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && t[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim()));
+}
+
+const tempPassword = () => `Mk-${randomId(4)}-${randomId(4)}-${randomId(2)}`;
+
+/**
+ * Adds or updates company members from CSV rows. New people get an account, a card and a temporary password
+ * (shown once, in the reply) that they must change when they first log in. People already in the company get
+ * their main card updated from the row. Sent in small batches by the page.
+ */
+async function importMembers(request, env, url) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const body = await readJson(request, 200_000);
+  const rows = parseCsv(body.csv || '');
+  if (rows.length < 2) throw new HttpError(400, 'The file needs a header row and at least one person.');
+  const head = rows[0].map((h) => h.trim().toLowerCase().replace(/[^a-z_]/g, ''));
+  const col = (r, ...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0 && r[i]) return r[i].trim(); } return ''; };
+  if (head.indexOf('email') < 0) throw new HttpError(400, 'The file needs an "email" column.');
+  if (rows.length - 1 > 25) throw new HttpError(400, 'Send at most 25 people at a time.');
+  const org = await env.DB.prepare('SELECT name, data FROM orgs WHERE id = ?').bind(user.org_id).first();
+  const settings = cleanOrgSettings(JSON.parse(org.data || '{}'));
+  const results = [];
+
+  for (const r of rows.slice(1)) {
+    const email = col(r, 'email').toLowerCase();
+    const name = col(r, 'name', 'full_name', 'fullname');
+    const result = { email, name };
+    try {
+      if (!isEmail(email)) throw new HttpError(400, 'Email address is missing or not valid.');
+      const role = ['admin', 'member'].includes(col(r, 'role').toLowerCase()) ? col(r, 'role').toLowerCase() : 'member';
+      const phones = [['mobile', col(r, 'mobile', 'phone')], ['work', col(r, 'office', 'work_phone')]].filter(([, v]) => v).map(([label, value]) => ({ label, value }));
+      const fields = {
+        name, title: col(r, 'title', 'job_title'), department: col(r, 'department'), company: col(r, 'company') || org.name,
+        phones, emails: [{ label: 'work', value: col(r, 'card_email', 'work_email') || email }], whatsapp: col(r, 'whatsapp'),
+        website: col(r, 'website'), address: col(r, 'address'),
+        ar: { name: col(r, 'name_ar'), title: col(r, 'title_ar'), department: col(r, 'department_ar'), company: col(r, 'company_ar') },
+      };
+      const existing = await env.DB.prepare('SELECT id, org_id, username FROM users WHERE email = ?').bind(email).first();
+      if (existing && existing.org_id !== user.org_id) throw new HttpError(409, 'This email already has its own MK Cards account.');
+
+      if (existing) {
+        // Already in the company: update the main card with what the row gives.
+        const main = await env.DB.prepare("SELECT id, data FROM cards WHERE user_id = ? AND slug = ''").bind(existing.id).first();
+        if (main) {
+          const current = readCard(main.data);
+          const merged = { ...current };
+          for (const [k, v] of Object.entries(fields)) {
+            if (k === 'ar') merged.ar = { ...current.ar, ...Object.fromEntries(Object.entries(v).filter(([, x]) => x)) };
+            else if (Array.isArray(v) ? v.length : v) merged[k] = v;
+          }
+          const card = cleanCard(merged);
+          card.photo = current.photo;
+          await env.DB.prepare('UPDATE cards SET data = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(card), Date.now(), main.id).run();
+        }
+        if (existing.id !== user.id) await env.DB.prepare('UPDATE users SET role = ? WHERE id = ? AND role != ?').bind(role, existing.id, 'owner').run();
+        results.push({ ...result, username: existing.username, status: 'updated' });
+        continue;
+      }
+
+      if (!name) throw new HttpError(400, 'Name is missing.');
+      let base = slugify(col(r, 'username') || email.split('@')[0]).replace(/[^a-z0-9_-]/g, '').slice(0, 26);
+      if (!USERNAME.test(base) || RESERVED.has(base)) base = `user-${randomId(4)}`;
+      let username = base;
+      for (let n = 2; await env.DB.prepare('SELECT 1 FROM users WHERE username = ?').bind(username).first(); n++) username = `${base}-${n}`;
+      const password = tempPassword();
+      const card = cleanCard({ ...fields, accent: settings.accent, style: 'aurora' });
+      const id = randomId(16);
+      const now = Date.now();
+      await env.DB.batch([
+        env.DB.prepare('INSERT INTO users (id, username, email, pass_hash, created_at, must_change, org_id, role) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
+          .bind(id, username, email, await hashPassword(password), now, user.org_id, role),
+        env.DB.prepare("INSERT INTO cards (id, user_id, slug, data, created_at, updated_at) VALUES (?, ?, '', ?, ?, ?)")
+          .bind(randomId(12), id, JSON.stringify(card), now, now),
+      ]);
+      results.push({ ...result, username, status: 'created', password, link: `${url.origin}/${username}` });
+    } catch (err) {
+      results.push({ ...result, status: 'error', reason: err instanceof HttpError ? err.message : 'Could not be added.' });
+      if (!(err instanceof HttpError)) console.error(err);
+    }
+  }
+  return json({ results });
+}
+
+async function memberOfMyOrg(request, env, memberId) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const member = await env.DB.prepare('SELECT id, role, org_id FROM users WHERE id = ?').bind(memberId).first();
+  if (!member || member.org_id !== user.org_id) throw new HttpError(404, 'That person is not in your company.');
+  return { user, member };
+}
+
+// Activate or deactivate a person (and all their cards), or change their role.
+async function updateMember(request, env, memberId) {
+  const { user, member } = await memberOfMyOrg(request, env, memberId);
+  const body = await readJson(request);
+  if (typeof body.active === 'boolean') {
+    if (member.id === user.id) throw new HttpError(400, 'You cannot deactivate yourself.');
+    if (member.role === 'owner') throw new HttpError(403, 'The owner of the workspace cannot be deactivated.');
+    const on = body.active ? 1 : 0;
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET active = ? WHERE id = ?').bind(on, member.id),
+      env.DB.prepare('UPDATE cards SET active = ? WHERE user_id = ?').bind(on, member.id),
+      ...(on ? [] : [env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(member.id)]),
+    ]);
+  }
+  if (body.role) {
+    if (user.role !== 'owner') throw new HttpError(403, 'Only the owner of the workspace can change roles.');
+    if (member.id === user.id || !['admin', 'member'].includes(body.role)) throw new HttpError(400, 'That role change is not possible.');
+    await env.DB.prepare('UPDATE users SET role = ? WHERE id = ?').bind(body.role, member.id).run();
+  }
+  if (body.leave === true) {
+    // Remove the person from the company. Their cards stay, switched off with the company's message.
+    if (member.role === 'owner' || member.id === user.id) throw new HttpError(400, 'That person cannot be removed.');
+    await env.DB.batch([
+      env.DB.prepare('UPDATE cards SET active = 0 WHERE user_id = ?').bind(member.id),
+      env.DB.prepare('UPDATE users SET active = 0 WHERE id = ?').bind(member.id),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(member.id),
+    ]);
+  }
+  return json({ ok: true });
+}
+
+async function resetMemberPassword(request, env, memberId) {
+  const { member } = await memberOfMyOrg(request, env, memberId);
+  if (member.role === 'owner') throw new HttpError(403, 'The owner changes their own password.');
+  const password = tempPassword();
+  await env.DB.batch([
+    env.DB.prepare('UPDATE users SET pass_hash = ?, must_change = 1 WHERE id = ?').bind(await hashPassword(password), member.id),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(member.id),
+  ]);
+  return json({ password });
 }
 
 // ---------- media (photos and drawn pictures, stored apart from card records) ----------
@@ -648,7 +1069,8 @@ async function findCard(env, username, slug) {
   slug = String(slug || '').toLowerCase();
   if (!USERNAME.test(username) || (slug && !SLUG.test(slug))) return null;
   return env.DB.prepare(
-    `SELECT c.id, c.slug, c.data, u.username, u.email FROM cards c JOIN users u ON u.id = c.user_id
+    `SELECT c.id, c.slug, c.data, c.active, c.inactive_message, c.user_id, u.username, u.email,
+            u.active AS user_active, u.org_id FROM cards c JOIN users u ON u.id = c.user_id
      WHERE u.username = ? AND c.slug = ?`,
   ).bind(username, slug).first();
 }
@@ -656,8 +1078,12 @@ async function findCard(env, username, slug) {
 async function publicCard(env, url) {
   const row = await findCard(env, url.searchParams.get('u'), url.searchParams.get('s'));
   if (!row) throw new HttpError(404, 'Card not found.');
+  if (!row.active || !row.user_active) return json(await inactiveNotice(env, row));
   if (url.searchParams.has('view')) {
-    await env.DB.prepare('UPDATE cards SET views = views + 1 WHERE id = ?').bind(row.id).run();
+    await env.DB.batch([
+      env.DB.prepare('UPDATE cards SET views = views + 1 WHERE id = ?').bind(row.id),
+      trackStatement(env, row.id, 'view'),
+    ]);
   }
   // contactEmail is the owner's account email: the page's "share your details" button writes to it.
   return json({ username: row.username, slug: row.slug, card: readCard(row.data), contactEmail: row.email });
@@ -666,6 +1092,8 @@ async function publicCard(env, url) {
 async function publicVCard(env, url) {
   const row = await findCard(env, url.searchParams.get('u'), url.searchParams.get('s'));
   if (!row) throw new HttpError(404, 'Card not found.');
+  if (!row.active || !row.user_active) throw new HttpError(410, 'This card is no longer active.');
+  await trackStatement(env, row.id, 'save').run();
   const link = `${url.origin}/${row.username}${row.slug ? '/' + row.slug : ''}`;
   const card = inLanguage(readCard(row.data), url.searchParams.get('lang'));
   const photo = await mediaBytes(env, card.photo);
