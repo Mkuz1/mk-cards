@@ -4,6 +4,7 @@ Runs in GitHub Actions (workflow "App Store listing") with the App Store Connect
 ASC_ISSUER_ID and ASC_KEY_P8. Optional: DEMO_PASSWORD, REVIEW_FIRST_NAME, REVIEW_LAST_NAME, REVIEW_PHONE,
 REVIEW_EMAIL. It never submits the app for review.
 """
+import functools
 import glob
 import hashlib
 import json
@@ -36,6 +37,7 @@ def call(method, path, body=None, ok=(200, 201, 204)):
 
 def step(name):
     def wrap(fn):
+        @functools.wraps(fn)
         def run(*a):
             try:
                 out = fn(*a)
