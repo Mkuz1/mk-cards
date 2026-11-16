@@ -10,5 +10,9 @@
   "durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
   // Workers AI reads photographed business cards and badges.
-  "ai": { "binding": "AI" }
+  "ai": { "binding": "AI" },
+  // Public settings. Secrets (client secrets, keys) are Worker secrets, set with `wrangler secret put`.
+  "vars": {
+    "GOOGLE_CLIENT_ID": "197457603817-2iq5njm81h47ucqpbsfjgitm81v6g401.apps.googleusercontent.com"
+  }
 }
