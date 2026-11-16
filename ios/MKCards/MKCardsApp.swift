@@ -24,7 +24,7 @@ struct RootView: View {
             case .signedOut:
                 WelcomeView()
             case .signedIn:
-                MainTabs()
+                MainTabs().preferredColorScheme(.light)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: model.phase)

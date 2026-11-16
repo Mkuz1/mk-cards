@@ -5,21 +5,45 @@ import WebKit
 
 /// What the server says about the person signed in (GET /api/me).
 struct Me: Decodable {
+    struct Org: Decodable {
+        let name: String
+        let role: String?
+        var isAdmin: Bool { role == "admin" || role == "owner" }
+    }
+    struct Identity: Decodable, Hashable {
+        let provider: String
+        let email: String?
+    }
     struct User: Decodable {
         let username: String
         let email: String
+        let hasPassword: Bool?
+        let identities: [Identity]?
+        let org: Org?
     }
     struct Card: Decodable {
         let name: String
         let title: String?
         let company: String?
         let label: String?
+        let accent: String?
+        let department: String?
     }
     struct Entry: Decodable, Identifiable {
         let id: String
         let slug: String
         let card: Card
         let active: Bool?
+        let views: Int?
+        let saves: Int?
+        let contacts: Int?
+
+        var displayName: String {
+            if let label = card.label, !label.isEmpty { return label }
+            return slug.isEmpty ? "Main card" : slug.capitalized
+        }
+        var role: String { [card.title, card.company].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") }
+        var isActive: Bool { active ?? true }
     }
     struct Wallet: Decodable {
         let apple: Bool?
@@ -33,6 +57,56 @@ struct Me: Decodable {
     let cards: [Entry]
     let wallet: Wallet?
     let sso: SSO?
+}
+
+/// A person the user met: shared on a card page, scanned, or typed in.
+struct Contact: Decodable, Identifiable, Hashable {
+    struct CRM: Decodable, Hashable { let id: String }
+    let id: Int
+    let name: String
+    let title: String?
+    let company: String?
+    let email: String?
+    let phone: String?
+    let mobile: String?
+    let website: String?
+    let address: String?
+    let note: String?
+    let event: String?
+    let source: String?
+    let createdAt: Double
+    let crm: CRM?
+    let crmError: String?
+
+    var role: String { [title, company].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") }
+    var date: Date { Date(timeIntervalSince1970: createdAt / 1000) }
+    var sourceLabel: String {
+        switch source {
+        case "scan": return "Scanned card"
+        case "badge": return "Scanned badge"
+        case "manual": return "Added by hand"
+        default: return "Shared on your card"
+        }
+    }
+}
+
+struct CRMState: Decodable {
+    let connected: Bool
+    let canManage: Bool
+    let mkApp: Bool?
+    let userName: String?
+    let scope: String?
+}
+
+struct CardStats: Decodable {
+    struct Day: Decodable, Identifiable {
+        let day: String
+        let view: Int
+        let save: Int
+        var id: String { day }
+    }
+    let total: [String: Int]
+    let series: [Day]
 }
 
 enum Tab: Hashable {
@@ -78,6 +152,8 @@ final class AppModel: ObservableObject {
     @Published var busy = false
     /// A page a web tab should open next (for example /new after creating an account).
     @Published var openPath: PageRequest?
+    /// The card shown on the Share tab.
+    @Published var shareCardId: String?
 
     let site: URL = {
         let value = Bundle.main.object(forInfoDictionaryKey: "MKSiteURL") as? String ?? "https://mkcards.pages.dev"
@@ -143,6 +219,33 @@ final class AppModel: ObservableObject {
         guard (200..<300).contains(http.statusCode) else {
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             throw AppError.message(object?["error"] as? String ?? "Something went wrong. Please try again.")
+        }
+    }
+
+    func get<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
+        let (data, http) = try await send(path)
+        try check(data, http)
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// Sends a change and returns the reply as JSON (an empty object when there is none).
+    @discardableResult
+    func change(_ path: String, method: String = "POST", json: [String: Any] = [:]) async throws -> [String: Any] {
+        let (data, http) = try await send(path, method: method, json: json)
+        try check(data, http)
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    /// Connects Microsoft or Google to this account, through Apple's secure browser sheet.
+    func connectIdentity(_ provider: String) async {
+        do {
+            let reply = try await change("/api/auth/ticket", json: ["mode": "link"])
+            guard let ticket = reply["ticket"] as? String else { return }
+            let start = url("/api/auth/sso/\(provider)/start?mode=link&ticket=\(ticket.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")
+            _ = await companySignIn(start: start)
+            await refresh()
+        } catch {
+            alert = error.localizedDescription
         }
     }
 

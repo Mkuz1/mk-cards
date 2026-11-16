@@ -9,14 +9,16 @@ import WebKit
 /// Pages reach these through `window.MKNative`, the same calls the Android app offers.
 final class WebController: UIViewController {
     private let model: AppModel
-    private let homeTab: Tab
+    private let startPath: String
+    private let onPath: ((String) -> Void)?
     private var webView: WKWebView!
     private var failedURL: URL?
     private var site: URL { model.site }
 
-    init(model: AppModel, tab: Tab) {
+    init(model: AppModel, path: String, onPath: ((String) -> Void)? = nil) {
         self.model = model
-        self.homeTab = tab
+        self.startPath = path
+        self.onPath = onPath
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -51,7 +53,7 @@ final class WebController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        open(path: homeTab.path)
+        open(path: startPath)
     }
 
     func open(path: String) {
@@ -75,6 +77,11 @@ final class WebController: UIViewController {
             signedOut: () => post('signedOut'),
             checkForUpdate: () => post('checkForUpdate'),
           };
+          // Tell the app when the page moves on (the site changes pages without reloading).
+          const report = () => post('path', { path: location.pathname });
+          const push = history.pushState;
+          history.pushState = function () { push.apply(this, arguments); report(); };
+          window.addEventListener('popstate', report);
         })();
         """
     }
@@ -112,8 +119,10 @@ final class WebController: UIViewController {
         case "checkForUpdate":
             // App Store updates arrive by themselves; the pages are always current.
             webView.evaluateJavaScript("window.MKCards && window.MKCards.nativeUpdate('current')")
+        case "path":
+            if let path = body["path"] as? String { onPath?(path) }
         case "retry":
-            webView.load(URLRequest(url: failedURL ?? model.url(homeTab.path)))
+            webView.load(URLRequest(url: failedURL ?? model.url(startPath)))
         default:
             break
         }
@@ -196,7 +205,7 @@ extension WebController: WKNavigationDelegate, WKUIDelegate {
     private func showOffline(_ error: Error) {
         let code = (error as NSError).code
         guard code != NSURLErrorCancelled, let page = Bundle.main.url(forResource: "offline", withExtension: "html") else { return }
-        failedURL = webView.url ?? model.url(homeTab.path)
+        failedURL = webView.url ?? model.url(startPath)
         webView.loadFileURL(page, allowingReadAccessTo: page)
     }
 
