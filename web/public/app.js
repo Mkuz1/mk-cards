@@ -1306,6 +1306,7 @@ function settingsScreen() {
       h('div', { class: 'row' }, h('span', { class: 'grow' }, 'Version'),
         h('span', { class: 'pill' }, appVersion ? `${appVersion} · web ${APP_VERSION}` : APP_VERSION)),
       h('button', { class: 'btn block', onclick: checkForUpdate }, 'Check for updates'),
+      h('a', { class: 'btn block', href: '/support' }, 'Help and support'),
       h('a', { class: 'btn block', href: '/privacy' }, 'Privacy')),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'Delete account'),
       h('p', { class: 'muted small' }, 'Removes your account, all your cards and the contacts sent to them. Your links and QR codes stop working.'),
@@ -2371,7 +2372,7 @@ document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href]');
   if (!a || a.target || a.hasAttribute('download') || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
   const url = new URL(a.href);
-  if (url.origin !== location.origin || url.pathname.startsWith('/api/') || url.pathname === '/privacy') return;
+  if (url.origin !== location.origin || url.pathname.startsWith('/api/') || url.pathname === '/privacy' || url.pathname === '/support') return;
   e.preventDefault();
   go(url.pathname);
 });

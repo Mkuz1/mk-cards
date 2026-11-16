@@ -1,0 +1,19 @@
+{
+  "bundleId": "app.mkcards",
+  "versionString": "1.0.0",
+  "locale": "en-US",
+  "primaryCategory": "BUSINESS",
+  "secondaryCategory": "PRODUCTIVITY",
+  "copyright": "2026 MK Cards",
+  "name": "MK Cards",
+  "subtitle": "Digital business cards & NFC",
+  "privacyPolicyUrl": "https://mkcards.pages.dev/privacy",
+  "supportUrl": "https://mkcards.pages.dev/support",
+  "marketingUrl": "https://mkcards.pages.dev",
+  "keywords": "business card,digital card,vcard,qr code,nfc,contact,networking,wallet,card scanner,salesforce",
+  "promotionalText": "Share your card with a QR code, link, NFC tag or Apple Wallet, and scan the cards of people you meet.",
+  "description": "MK Cards is your business card, always with you.\n\nCreate elegant digital cards for work, clients or events, in English and Arabic. Share them with a QR code, a link, an NFC tag or Apple Wallet. The person you meet needs no app: one tap saves your contact.\n\nSHARE ANYWHERE\n• Full-screen QR code, ready to scan\n• Add your card to Apple Wallet\n• Write your card to NFC stickers and cards\n• Share your link in any app\n\nNEVER LOSE A CONTACT\n• Scan paper business cards: the details are read for you\n• Scan event badges with a QR code\n• Visitors can send you their details from your card page\n• Save contacts to your iPhone, export them, or send them to Salesforce\n\nLOOK PROFESSIONAL\n• Formal card designs with your photo and company logo\n• Email signatures with your QR code\n• Video-call backgrounds for Zoom, Teams and Meet\n\nKNOW WHAT WORKS\n• See how often each card is viewed and saved\n\nFOR COMPANIES\n• Matching cards for the whole team, imported from a spreadsheet\n• Sign in with Microsoft 365 or Google Workspace\n• Switch cards off and show a message when someone leaves\n• Company Salesforce connection and activity exports",
+  "reviewNotes": "MK Cards creates digital business cards. Sign in with the demo account below (Log in with username).\n\nNative features to try:\n• Share tab: full-size QR code, Add to Apple Wallet, Write to an NFC tag (needs an NFC sticker).\n• Scan tab: Business card opens the VisionKit document camera and reads the card on the device; Event badge opens the live QR scanner. Any printed business card works.\n• Contacts tab: save a contact to the iPhone address book.\n• Sign in with Apple on the welcome screen.\n\nMicrosoft and Google sign-in are for company accounts and are optional. Salesforce needs the customer's own Salesforce account. The app sells nothing; company plans are arranged outside the app.",
+  "demoAccountName": "mkdemo",
+  "screenshotDisplayType": "APP_IPHONE_67"
+}

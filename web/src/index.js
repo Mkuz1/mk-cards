@@ -196,7 +196,13 @@ const app = {
       const res = serveAsset(request, url);
       // Link previews need full addresses for the page and its picture.
       if (!(res.headers.get('content-type') || '').startsWith('text/html')) return res;
+      // The support and privacy pages show the contact address set in SUPPORT_EMAIL.
+      const email = isEmail(env.SUPPORT_EMAIL || '') ? env.SUPPORT_EMAIL : '';
       return new HTMLRewriter()
+        .on('a[data-contact]', { element: (el) => {
+          if (email) { el.setAttribute('href', `mailto:${email}`); el.setInnerContent(email); }
+        } })
+        .on('[data-contact-panel]', { element: (el) => { if (!email) el.remove(); } })
         .on('meta[property="og:url"]', { element: (el) => el.setAttribute('content', url.origin + url.pathname) })
         .on('meta[property="og:image"]', { element: (el) => el.setAttribute('content', `${url.origin}/og-default.jpg`) })
         .on('meta[name="twitter:image"]', { element: (el) => el.setAttribute('content', `${url.origin}/og-default.jpg`) })
