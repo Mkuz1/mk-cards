@@ -30,7 +30,14 @@ def token():
 def call(method, path, body=None, ok=(200, 201, 204)):
     r = requests.request(method, API + path, json=body, headers={"Authorization": "Bearer " + token()}, timeout=60)
     if r.status_code not in ok:
-        detail = "; ".join(e.get("detail") or e.get("title", "") for e in r.json().get("errors", [])) if r.content else ""
+        detail = ""
+        if r.content:
+            errs = r.json().get("errors", [])
+            parts = [e.get("detail") or e.get("title", "") for e in errs]
+            for e in errs:  # Apple lists the real reasons here when a submission is refused
+                for key, items in (e.get("meta", {}).get("associatedErrors") or {}).items():
+                    parts += [f"[{key.split('/')[-2] if '/' in key else key}] " + (x.get("detail") or x.get("code", "")) for x in items]
+            detail = "; ".join(parts)
         raise RuntimeError(f"{method} {path.split('?')[0]} -> {r.status_code} {detail}")
     return r.json() if r.content else {}
 
@@ -225,17 +232,21 @@ def availability():
 
 @step("Attach the newest build")
 def attach_build():
-    deadline = time.time() + 40 * 60
+    """Waits for the most recently uploaded build of this version to finish processing, then attaches it."""
+    deadline = time.time() + 45 * 60
     while True:
         builds = call("GET", f"/v1/builds?filter[app]={APP}&filter[preReleaseVersion.version]={M['versionString']}&sort=-uploadedDate&limit=5")["data"]
-        ready = [b for b in builds if b["attributes"]["processingState"] == "VALID"]
-        if ready:
-            b = ready[0]
-            call("PATCH", f"/v1/appStoreVersions/{VID}/relationships/build", {"data": {"type": "builds", "id": b["id"]}})
-            return f"build {b['attributes']['version']}"
+        if builds:
+            newest = max(builds, key=lambda b: int(b["attributes"]["version"]))
+            state = newest["attributes"]["processingState"]
+            if state == "VALID":
+                call("PATCH", f"/v1/appStoreVersions/{VID}/relationships/build", {"data": {"type": "builds", "id": newest["id"]}})
+                return f"build {newest['attributes']['version']}"
+            if state in ("FAILED", "INVALID"):
+                raise RuntimeError(f"Apple could not process build {newest['attributes']['version']} ({state}).")
+            print(f"Build {newest['attributes']['version']} is {state}; waiting…", flush=True)
         if time.time() > deadline:
-            raise RuntimeError("No processed build for version " + M["versionString"] + " yet; run this again later.")
-        print("Waiting for Apple to finish processing the build…", flush=True)
+            raise RuntimeError("The newest build is still processing; run this again later.")
         time.sleep(60)
 
 
