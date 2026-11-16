@@ -248,6 +248,7 @@ export async function googleSaveUrl(env, details) {
     stored = true;
   } catch (err) {
     console.warn('Google Wallet update failed; the link carries the whole pass instead.', err);
+    if (details.report) details.report(String(err && err.message || err).slice(0, 600));
   }
   // When Google already has the pass, the link only needs to name it; that keeps the link short.
   const jwt = await signJwt(keyFile, {

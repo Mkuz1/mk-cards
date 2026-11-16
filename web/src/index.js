@@ -1709,8 +1709,11 @@ async function walletPass(request, env, url, id, kind) {
     });
   }
   if (!ready.google) throw new HttpError(503, 'Google Wallet passes are not set up yet.');
+  let problem = '';
   const save = await googleSaveUrl(env, { cardId: id, card, link, origin: url.origin,
-    hero: media.hero && media.hero.path, logo: logoPath });
+    hero: media.hero && media.hero.path, logo: logoPath, report: (message) => { problem = message; } });
+  // ?check=1 shows the card's owner whether Google accepted the pass, for setting up the wallet.
+  if (url.searchParams.has('check')) return json({ storedAtGoogle: !problem, problem, linkLength: save.length });
   return new Response(null, { status: 302, headers: { location: save, 'cache-control': 'private, no-store' } });
 }
 
