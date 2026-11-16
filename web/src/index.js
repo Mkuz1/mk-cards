@@ -144,6 +144,7 @@ const RESERVED = new Set([
   'api', 'new', 'edit', 'share', 'inbox', 'settings', 'privacy', 'terms', 'login', 'register', 'logout',
   'account', 'admin', 'icons', 'vendor', 'assets', 'static', 'about', 'help', 'support', 'www', 'app',
   'mkcards', 'mk-cards', 'me', 'public', 'null', 'undefined', 'index', 'sw', 'manifest', 'favicon', 'vcard', 'contacts',
+  'scan', 'signature', 'background', 'welcome-password', 'crm', 'auth', 'sso', 'leads', 'billing', 'pricing',
 ]);
 const USERNAME = /^[a-z0-9][a-z0-9_-]{2,29}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,29}$/;
