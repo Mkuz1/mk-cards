@@ -33,7 +33,6 @@ const samples = [
 export { samples };
 
 const dataUri = (file, type) => `data:${type};base64,${readFileSync(file).toString('base64')}`;
-const logoWhite = dataUri(new URL('../public/wallet/logo@3x.png', import.meta.url), 'image/png');
 const googleLogo = dataUri(new URL('../public/wallet/google-logo.png', import.meta.url), 'image/png');
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const rgb = (c) => `rgb(${c.join(',')})`;

@@ -1,8 +1,8 @@
 // MK Cards service worker. Bump VERSION on every release (keep in step with APP_VERSION in app.js):
 // a changed file is what makes browsers show the "new version is ready" notice.
-const VERSION = '1.9.0';
+const VERSION = '1.9.1';
 const CACHE = `mk-cards-${VERSION}`;
-const SHELL = ['/', '/styles.css', '/app.js', '/card-art.js', '/vendor/qrcode.js', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png'];
+const SHELL = ['/', '/styles.css', '/app.js', '/card-art.js', '/vendor/qrcode.js', '/manifest.webmanifest', '/icons/favicon-32.png', '/icons/icon-192.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));

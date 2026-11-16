@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '1.9.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '1.9.1'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -75,9 +75,7 @@ function icon(name) {
 }
 
 function logo() {
-  const span = document.createElement('span');
-  span.innerHTML = '<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7aa2ff"/><stop offset="1" stop-color="#3b5bff"/></linearGradient></defs><rect width="64" height="64" rx="18" fill="url(#lg)"/><rect x="12" y="19" width="40" height="27" rx="7" fill="#fff" fill-opacity=".28" stroke="#fff" stroke-opacity=".8" stroke-width="1.500"/><path d="M19 39V27l6.500 8 6.500-8v12M38 27v12M38 33l7-6M40.500 32l5 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  return span.firstChild;
+  return h('img', { class: 'brand-icon', src: '/icons/icon-192.png', alt: '' });
 }
 
 // ---------- account state (loaded from the server; nothing about the user is kept only on the device) ----------
