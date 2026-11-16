@@ -84,24 +84,31 @@ def info_localization():
         "name": M["name"], "subtitle": M["subtitle"], "privacyPolicyUrl": M["privacyPolicyUrl"]}}})
 
 
+BOOL_ANSWERS = {"advertising", "gambling", "lootBox", "messagingAndChat", "parentalControls", "ageAssurance", "unrestrictedWebAccess",
+                "userGeneratedContent", "healthOrWellnessTopics", "socialMedia", "socialMediaAgeRestricted"}
+SKIP_ANSWERS = {"kidsAgeBand", "ageRatingOverride", "ageRatingOverrideV2", "koreaAgeRatingOverride", "developerAgeRatingInfoUrl",
+                "gracRatingClassificationNumber"}
+
+
 @step("Age rating (no objectionable content: 4+)")
 def age_rating():
     decl = call("GET", f"/v1/appInfos/{INFO}/ageRatingDeclaration")["data"]
-    did, done, skipped = decl["id"], [], []
+    did = decl["id"]
+    attrs = {}
     for key, value in decl["attributes"].items():
-        if key in ("kidsAgeBand", "ageRatingOverride", "ageRatingOverrideV2", "koreaAgeRatingOverride", "developerAgeRatingInfoUrl"):
+        if key in SKIP_ANSWERS:
             continue
-        tries = [False] if isinstance(value, bool) else ["NONE", False]
-        for v in tries:
-            try:
-                call("PATCH", f"/v1/ageRatingDeclarations/{did}", {"data": {"type": "ageRatingDeclarations", "id": did, "attributes": {key: v}}})
-                done.append(key)
-                break
-            except RuntimeError:
-                continue
-        else:
-            skipped.append(key)
-    return f"set {len(done)} answers" + (f"; please answer in App Store Connect: {', '.join(skipped)}" if skipped else "")
+        attrs[key] = False if (isinstance(value, bool) or key in BOOL_ANSWERS) else "NONE"
+    try:
+        call("PATCH", f"/v1/ageRatingDeclarations/{did}", {"data": {"type": "ageRatingDeclarations", "id": did, "attributes": attrs}})
+    except RuntimeError as first:
+        # Learn which answers are yes/no from Apple's reply, flip them and try once more.
+        text = str(first)
+        for key in list(attrs):
+            if key in text:
+                attrs[key] = False if attrs[key] == "NONE" else "NONE"
+        call("PATCH", f"/v1/ageRatingDeclarations/{did}", {"data": {"type": "ageRatingDeclarations", "id": did, "attributes": attrs}})
+    return f"{len(attrs)} answers: none of the listed content"
 
 
 def version():
@@ -230,8 +237,10 @@ def attach_build():
         time.sleep(60)
 
 
+ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
 for fn in (content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build):
-    fn()
+    if not ONLY or fn.__name__ in ONLY:
+        fn()
 
 print("\nSUMMARY")
 for status, name, detail in results:

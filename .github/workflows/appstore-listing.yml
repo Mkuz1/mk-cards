@@ -4,6 +4,11 @@ name: App Store listing
 
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: Steps to run (comma-separated, empty for all)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -28,4 +33,5 @@ jobs:
           REVIEW_LAST_NAME: ${{ secrets.REVIEW_LAST_NAME }}
           REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
           REVIEW_EMAIL: ${{ secrets.REVIEW_EMAIL }}
+          ONLY: ${{ inputs.only }}
         run: python ios/appstore/appstore.py
