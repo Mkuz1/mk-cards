@@ -160,3 +160,38 @@ if a new key was made) with `npx wrangler secret put`.
 install it with Sideloadly or AltStore, which sign it with your Apple ID (a paid developer account keeps
 it installed for a year). To build on a Mac instead: `brew install xcodegen`, then in `ios/` run
 `xcodegen generate` and open `MKCards.xcodeproj`.
+
+## Analytics
+
+Every card counts views, contact saves ("Save contact" on the card page), and taps on WhatsApp, call,
+email, website, QR code and share, per day (`events` table). The owner sees them on each card tile and in
+the statistics window, and downloads them as **Activity CSV**. Owners' own visits are not counted. Scans of a
+printed or wallet QR code save the contact without visiting the page, so they cannot be counted.
+
+## Company workspaces
+
+- **Admin → Set up your company** creates a workspace; its creator is the owner, who can make others admins.
+- **Import people** reads a CSV (columns: `email, name, title, department, mobile, office, whatsapp, role,
+  name_ar, title_ar, department_ar, company_ar`; download the template from the Admin page). New people get an
+  account, a card in the company colour and a temporary password; the admin downloads the sign-in details once.
+  People must choose their own password when they first sign in. Importing someone already in the company
+  updates their main card.
+- **Deactivate** stops a person signing in and switches off all their cards: visitors see the company's
+  "no longer with us" message (Company settings; `{name}` and `{company}` are filled in) and the company's
+  contact details. **Reactivate** restores everything. Single cards can be switched off and on too, by their
+  owner or an admin.
+- **Export people** and **Activity CSV** download the member list and the company's activity.
+- Not built yet: billing and seat limits (plans show "Trial"), admins editing members' card text directly
+  (re-importing a CSV updates cards), single sign-on.
+
+## Selling the app (notes)
+
+- Company plans can be sold and invoiced on the website: Apple's rules allow business-to-business services
+  sold outside the App Store (guideline 3.1.3(c)), and the same applies on Google Play. Members simply sign in
+  to the free apps.
+- Paid plans bought by individuals inside the iPhone or Android app must use Apple's or Google's billing.
+- Payments need a provider account (for example Stripe for the website) before they can be built.
+- Apple can reject apps that are "just a website" (guideline 4.2). The iPhone app's native parts (Wallet,
+  Contacts, share sheet) help; native extras such as NFC tag writing or a home-screen widget would help more.
+- Store listings need: the final privacy policy, a demo account for Apple's reviewers, and Google Play's
+  data-safety form (the app has in-app account deletion).
