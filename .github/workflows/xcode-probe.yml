@@ -1,0 +1,7 @@
+name: Xcode versions
+on: workflow_dispatch
+jobs:
+  list:
+    runs-on: macos-26
+    steps:
+      - run: ls -d /Applications/Xcode*.app; sw_vers
