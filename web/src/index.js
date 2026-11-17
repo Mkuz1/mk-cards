@@ -144,7 +144,7 @@ const RESERVED = new Set([
   'api', 'new', 'edit', 'share', 'inbox', 'settings', 'privacy', 'terms', 'login', 'register', 'logout',
   'account', 'admin', 'icons', 'vendor', 'assets', 'static', 'about', 'help', 'support', 'www', 'app',
   'mkcards', 'mk-cards', 'me', 'public', 'null', 'undefined', 'index', 'sw', 'manifest', 'favicon', 'vcard', 'contacts',
-  'scan', 'signature', 'background', 'welcome-password', 'crm', 'auth', 'sso', 'leads', 'billing', 'pricing',
+  'scan', 'signature', 'background', 'welcome-password', 'crm', 'auth', 'sso', 'leads', 'billing', 'pricing', 'delete-account',
 ]);
 const USERNAME = /^[a-z0-9][a-z0-9_-]{2,29}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,29}$/;
@@ -204,6 +204,9 @@ const app = {
           if (email) { el.setAttribute('href', `mailto:${email}`); el.setInnerContent(email); }
         } })
         .on('[data-contact-panel]', { element: (el) => { if (!email) el.remove(); } })
+        .on('a[data-contact-request]', { element: (el) => {
+          if (email) el.setAttribute('href', `mailto:${email}?subject=${encodeURIComponent('MK Cards account deletion request')}&body=${encodeURIComponent('Please delete my MK Cards account and all its data.\n\nUsername: \nEmail address on the account: \n')}`);
+        } })
         .on('meta[property="og:url"]', { element: (el) => el.setAttribute('content', url.origin + url.pathname) })
         .on('meta[property="og:image"]', { element: (el) => el.setAttribute('content', `${url.origin}/og-default.jpg`) })
         .on('meta[name="twitter:image"]', { element: (el) => el.setAttribute('content', `${url.origin}/og-default.jpg`) })

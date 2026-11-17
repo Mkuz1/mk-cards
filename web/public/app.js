@@ -2377,7 +2377,7 @@ document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href]');
   if (!a || a.target || a.hasAttribute('download') || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
   const url = new URL(a.href);
-  if (url.origin !== location.origin || url.pathname.startsWith('/api/') || url.pathname === '/privacy' || url.pathname === '/support') return;
+  if (url.origin !== location.origin || url.pathname.startsWith('/api/') || ['/privacy', '/support', '/delete-account'].includes(url.pathname)) return;
   e.preventDefault();
   go(url.pathname);
 });
