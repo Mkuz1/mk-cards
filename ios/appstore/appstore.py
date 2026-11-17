@@ -277,28 +277,30 @@ def submit():
     states = {x["id"]: x["attributes"].get("state") for x in subs}
     if any(st in ("WAITING_FOR_REVIEW", "IN_REVIEW") for st in states.values()):
         return "already waiting for review"
-    ready = [i for i, st in states.items() if st in ("UNRESOLVED_ISSUES", "READY_FOR_REVIEW")]
+    notes = []
+    # A submission left with unresolved issues cannot take the version again: cancel it (as "Cancel submission" in
+    # App Store Connect does) and send a new one.
+    for sid, st in states.items():
+        if st == "UNRESOLVED_ISSUES":
+            call("PATCH", f"/v1/reviewSubmissions/{sid}", {"data": {"type": "reviewSubmissions", "id": sid, "attributes": {"canceled": True}}})
+            notes.append("cancelled the old submission")
+    for _ in range(10):  # cancelling takes a moment
+        subs = call("GET", f"/v1/reviewSubmissions?filter[app]={APP}&filter[platform]=IOS&limit=20")["data"]
+        if not any(x["attributes"].get("state") in ("UNRESOLVED_ISSUES", "CANCELING") for x in subs):
+            break
+        time.sleep(6)
+    ready = [x["id"] for x in subs if x["attributes"].get("state") == "READY_FOR_REVIEW"]
     sid = ready[0] if ready else call("POST", "/v1/reviewSubmissions", {"data": {"type": "reviewSubmissions",
         "attributes": {"platform": "IOS"}, "relationships": {"app": {"data": {"type": "apps", "id": APP}}}}})["data"]["id"]
-    # The version must be an item of the submission and ready; after a rejection it can drop out and need adding back.
     items = call("GET", f"/v1/reviewSubmissions/{sid}/items?include=appStoreVersion")["data"]
-    mine = [x for x in items if (x["relationships"].get("appStoreVersion", {}).get("data") or {}).get("id") == VID]
-    notes = []
-    for x in mine:
-        if x["attributes"].get("state") not in ("READY_FOR_REVIEW", "ACCEPTED"):
-            try:
-                call("DELETE", f"/v1/reviewSubmissionItems/{x['id']}")
-                notes.append(f"removed {x['attributes'].get('state')} item")
-            except RuntimeError as e:
-                notes.append(f"could not remove item: {e}")
-            mine = []
-    if not mine:
+    if not any((x["relationships"].get("appStoreVersion", {}).get("data") or {}).get("id") == VID for x in items):
         call("POST", "/v1/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {
             "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sid}},
             "appStoreVersion": {"data": {"type": "appStoreVersions", "id": VID}}}}})
-        notes.append("added the version")
+        notes.append("added version 1.0.0")
     call("PATCH", f"/v1/reviewSubmissions/{sid}", {"data": {"type": "reviewSubmissions", "id": sid, "attributes": {"submitted": True}}})
-    return f"submitted (was {states.get(sid, 'new')}; {', '.join(notes) or 'version already in it'})"
+    final = call("GET", f"/v1/reviewSubmissions/{sid}")["data"]["attributes"].get("state")
+    return f"{final}; {', '.join(notes)}"
 
 
 ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
