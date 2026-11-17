@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCallBackground, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.3.2'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.4.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -1448,9 +1448,11 @@ function adminScreen() {
       h('section', { class: 'glass panel stack' },
         h('div', { class: 'row wrap' }, h('h2', { class: 'grow' }, 'People'),
           h('button', { class: 'btn small', onclick: downloadTemplate }, icon('download'), 'Import template'),
-          h('a', { class: 'btn small', href: '/api/org/members.csv', download: 'mkcards-members.csv' }, icon('download'), 'Export people'),
+          h('a', { class: 'btn small', href: '/api/org/members.csv', download: 'mkcards-staff-cards.csv' }, icon('download'), 'Export staff cards'),
           h('a', { class: 'btn small', href: '/api/org/activity.csv', download: 'mkcards-company-activity.csv' }, icon('chart'), 'Activity CSV')),
         search, list),
+      importHelpPanel(),
+      printDesignPanel(data.design, members),
       h('div', { class: 'two-col' }, companySignInPanel(data.sso, load), crmPanel('admin')));
     drawList();
   };
@@ -1469,6 +1471,8 @@ function memberRow(m, info, reload, myId) {
       h('span', { class: 'grow' }, h('strong', {}, c.label || (c.slug === '' ? 'Main card' : c.slug)), ' ',
         h('a', { href: `/${m.username}${c.slug ? '/' + c.slug : ''}`, target: '_blank', rel: 'noopener', class: 'small' }, `${location.host}/${m.username}${c.slug ? '/' + c.slug : ''}`),
         h('span', { class: 'small muted' }, ` · ${plural(c.views, 'view')} · ${plural(c.saves, 'save')}`)),
+      h('a', { class: 'btn small', href: `/api/org/print/${c.id}/front.svg`, download: `${m.username}-front.svg`, title: 'Print card, front (SVG)' }, icon('download'), 'Front'),
+      h('a', { class: 'btn small', href: `/api/org/print/${c.id}/back.svg`, download: `${m.username}-back.svg`, title: 'Print card, back (SVG)' }, icon('download'), 'Back'),
       h('button', { class: `btn small${c.active ? '' : ' primary'}`, onclick: () => call(`/cards/${c.id}/status`, { active: !c.active }) },
         icon('power'), c.active ? 'Turn off' : 'Turn on'))));
   return h('div', { class: `member${m.active ? '' : ' off'}` },
@@ -1507,11 +1511,27 @@ function memberRow(m, info, reload, myId) {
     details);
 }
 
-const TEMPLATE_HEAD = ['email', 'name', 'title', 'department', 'mobile', 'office', 'whatsapp', 'role', 'name_ar', 'title_ar', 'department_ar', 'company_ar'];
+// Every column the import understands. Only email and name are required; empty cells leave a detail as it is.
+const TEMPLATE_HEAD = [
+  'email', 'username', 'temporary_password', 'role', 'name', 'title', 'department', 'company', 'card_label',
+  'mobile', 'office', 'whatsapp', 'whatsapp_message', 'card_email', 'website', 'linkedin', 'address', 'bio',
+  'name_ar', 'title_ar', 'department_ar', 'company_ar', 'address_ar', 'bio_ar',
+];
+const TEMPLATE_EXAMPLE = [
+  'sara.haddad@company.example', 'sara-haddad', 'Welcome-2026!', 'member', 'Sara Haddad', 'Senior Architect', 'Design', '', 'Work',
+  '+971 50 000 0001', '+971 4 000 0000', '+971500000001', 'Hello Sara, I found your card.', '', 'https://company.example',
+  'https://www.linkedin.com/in/sara-haddad', 'Dubai, United Arab Emirates', 'Designing landmark buildings across the Gulf.',
+  'سارة حداد', 'مهندسة معمارية أولى', 'التصميم', '', 'دبي، الإمارات العربية المتحدة', '',
+];
+const TEMPLATE_NOTES = [
+  'Required: email, name. username: chosen by you (3–30 letters, numbers, - or _), or left empty to make one from the email.',
+  'temporary_password: at least 8 characters, or empty to generate one. People must change it when they first sign in.',
+  'role: member or admin. company: empty uses your company name. card_email: the email shown on the card (default: the sign-in email).',
+  'Rows for people already in your company update their main card; a temporary_password in such a row resets their password.',
+];
 
 function downloadTemplate() {
-  const rows = [TEMPLATE_HEAD, ['sara.haddad@company.example', 'Sara Haddad', 'Senior Architect', 'Design', '+971 50 000 0001', '+971 4 000 0000', '+971500000001', 'member', 'سارة حداد', 'مهندسة معمارية أولى', 'التصميم', '']];
-  saveCsv(rows, 'mkcards-import-template.csv');
+  saveCsv([TEMPLATE_HEAD, TEMPLATE_EXAMPLE], 'mkcards-import-template.csv');
 }
 
 const csvLine = (r) => r.map((v) => (/[",\n\r]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''))).join(',');
@@ -1556,13 +1576,14 @@ async function importPeople(file, reload) {
   const created = results.filter((r) => r.status === 'created');
   const updated = results.filter((r) => r.status === 'updated');
   const failed = results.filter((r) => r.status === 'error');
+  const withPassword = results.filter((r) => r.password);
   sheet((done) => [
     h('h1', {}, 'Import finished'),
     h('div', { class: 'stat-grid' }, h('div', { class: 'stat' }, h('strong', {}, created.length), h('span', {}, 'Added')),
       h('div', { class: 'stat' }, h('strong', {}, updated.length), h('span', {}, 'Updated')), h('div', { class: 'stat' }, h('strong', {}, failed.length), h('span', {}, 'Not added'))),
-    created.length && h('p', { class: 'muted' }, 'New people get a temporary password and must choose their own when they first log in. Download the sign-in details now: the passwords are shown only once.'),
-    created.length && h('button', { class: 'btn primary block', onclick: () => saveCsv([['email', 'name', 'username', 'temporary_password', 'card_link', 'login_page'],
-      ...created.map((r) => [r.email, r.name, r.username, r.password, r.link, `${location.origin}/login`])], 'mkcards-sign-in-details.csv') }, icon('download'), 'Download sign-in details'),
+    withPassword.length > 0 && h('p', { class: 'muted' }, 'People with a temporary password must choose their own when they first sign in. Their sign-in details are also in "Export staff cards" until they do.'),
+    withPassword.length > 0 && h('button', { class: 'btn primary block', onclick: () => saveCsv([['email', 'name', 'username', 'temporary_password', 'card_link', 'login_page'],
+      ...withPassword.map((r) => [r.email, r.name, r.username, r.password, r.link, `${location.origin}/login`])], 'mkcards-sign-in-details.csv') }, icon('download'), 'Download sign-in details'),
     failed.length && h('div', { class: 'stack' }, h('h2', {}, 'Not added'),
       ...failed.map((r) => h('p', { class: 'small' }, h('strong', {}, r.email || '(no email)'), ` — ${r.reason}`))),
     h('button', { class: 'btn block', onclick: () => { done(); reload(); } }, 'Done'),
@@ -1612,6 +1633,73 @@ function orgSettingsSheet(info, reload) {
       h('button', { class: 'btn block', onclick: close }, 'Cancel'),
     ];
   });
+}
+
+function importHelpPanel() {
+  return h('details', { class: 'glass panel stack help-panel' },
+    h('summary', {}, h('strong', {}, 'How bulk import works'), h('span', { class: 'muted small' }, ' — columns, usernames and temporary passwords')),
+    h('ol', { class: 'small' },
+      h('li', {}, 'Download the import template. It has every column MK Cards understands, and an example row.'),
+      h('li', {}, 'Fill in one row per person (Excel, Numbers or Google Sheets), save as CSV, and choose Import people.'),
+      h('li', {}, 'Download the sign-in details at the end, or later with Export staff cards, and send each person their username and temporary password. They choose their own password when they first sign in.')),
+    h('ul', { class: 'small muted' }, ...TEMPLATE_NOTES.map((n) => h('li', {}, n))),
+    h('p', { class: 'small muted' }, 'Export staff cards gives every card with all details and links: card page, save-contact file, QR code, email signature, Zoom background and the print files.'));
+}
+
+const PLACEHOLDER_LIST = ['name', 'title', 'department', 'company', 'mobile', 'office', 'phone', 'whatsapp', 'email', 'website', 'address', 'linkedin', 'link', 'username', 'initials', 'name_ar', 'title_ar', 'department_ar', 'company_ar', 'address_ar'];
+
+// The company's print design: a front and back (SVG) filled in for each person, ready for the printer.
+function printDesignPanel(design, members) {
+  const panel = h('section', { class: 'glass panel stack' });
+  const mine = members.find((m) => m.cards.length) || null;
+  const sample = mine && (mine.cards.find((c) => c.slug === '') || mine.cards[0]);
+  const status = { ...(design || {}) };
+  const preview = (side) => {
+    const box = h('div', { class: 'print-preview' }, h('span', { class: 'muted small' }, 'Loading…'));
+    if (!sample) { box.replaceChildren(h('span', { class: 'muted small' }, 'Add a person with a card to preview.')); return box; }
+    fetch(`/api/org/print/${sample.id}/${side}.svg?v=${status[side] || 0}`, { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error())))
+      .then((blob) => box.replaceChildren(h('img', { src: URL.createObjectURL(blob), alt: `${side} of ${sample.name || 'the card'}` })))
+      .catch(() => box.replaceChildren(h('span', { class: 'error small' }, 'Preview not available.')));
+    return box;
+  };
+  const upload = (side) => h('input', { type: 'file', accept: '.svg,image/svg+xml', hidden: true, onchange: async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const res = await api('/org/design', { method: 'PUT', body: { side, svg: await file.text() } });
+      Object.assign(status, res.design);
+      const unknown = res.placeholders.filter((p) => !PLACEHOLDER_LIST.includes(p) && p !== 'website_url' && p !== 'card_url');
+      toast(`${side === 'front' ? 'Front' : 'Back'} uploaded. ${res.placeholders.length} field${res.placeholders.length === 1 ? '' : 's'} found${res.hasQr ? ' and a QR code area' : ''}.`
+        + (unknown.length ? ` Not recognised: ${unknown.join(', ')}.` : ''));
+      draw();
+    } catch (err) { toast(err.message); }
+  } });
+  const side = (name) => {
+    const input = upload(name);
+    return h('div', { class: 'stack print-side' },
+      h('div', { class: 'row' }, h('strong', { class: 'grow' }, name === 'front' ? 'Front' : 'Back'),
+        h('span', { class: `pill${status[name] ? ' ok' : ''}` }, status[name] ? 'Your design' : 'MK Cards design')),
+      preview(name),
+      h('div', { class: 'row wrap' },
+        h('button', { class: 'btn small primary', onclick: () => input.click() }, icon('upload'), 'Upload SVG'), input,
+        h('a', { class: 'btn small', href: `/api/org/design/${name}.svg`, download: `template-${name}.svg` }, icon('download'), 'Template'),
+        status[name] ? h('button', { class: 'btn small danger', onclick: async () => {
+          try { Object.assign(status, (await api(`/org/design/${name}`, { method: 'DELETE' })).design); draw(); } catch (err) { toast(err.message); }
+        } }, 'Remove') : null));
+  };
+  const draw = () => panel.replaceChildren(
+    h('div', { class: 'row wrap' }, h('span', { class: 'panel-icon' }, icon('cards')), h('h2', { class: 'grow' }, 'Printed business cards'),
+      h('a', { class: 'btn primary', href: '/api/org/print.zip', download: 'mkcards-print-cards.zip' }, icon('download'), 'Download all cards (SVG, ZIP)')),
+    h('p', { class: 'muted small' }, 'Upload your company\'s card design once (front and back, as SVG). MK Cards fills in each person\'s details and their own QR code, ready for the printer: 85 × 55 mm with 3 mm bleed in the starting template.'),
+    h('div', { class: 'two-col' }, side('front'), side('back')),
+    h('details', { class: 'how' }, h('summary', {}, 'How to prepare a design'),
+      h('p', { class: 'small muted' }, 'Start from the Template (it is your current design, or MK Cards\' design with your colour and logo). In Illustrator, Figma, Affinity or Inkscape, type the fields where they belong, in double braces, and keep text as text (not outlines). Embed images. Export as SVG.'),
+      h('p', { class: 'small' }, PLACEHOLDER_LIST.map((p) => `{{${p}}}`).join('  ')),
+      h('p', { class: 'small muted' }, 'For the QR code, draw a square and give it the id "qr" (in Illustrator: the layer name; in Figma: the layer name). Optional: data-color="#0f2343" sets its colour.')));
+  draw();
+  return panel;
 }
 
 // ---------- first sign-in for invited people ----------
@@ -1751,7 +1839,7 @@ function companySignInPanel(info, reload) {
   const draw = (sso) => {
     const claimed = (p) => sso.claims.find((c) => c.provider === p);
     const available = ['microsoft', 'google'].filter((p) => sso.available[p] || claimed(p));
-    panel.replaceChildren(
+    panel.replaceChildren(...[
       h('div', { class: 'row' }, h('span', { class: 'panel-icon' }, icon('shield')), h('h2', { class: 'grow' }, 'Company sign-in')),
       h('p', { class: 'muted small' }, 'Let your people sign in with their Microsoft 365 or Google Workspace account. Connect your company by signing in once with an administrator\'s work account.'),
       ...(available.length ? available.map((p) => {
@@ -1767,7 +1855,8 @@ function companySignInPanel(info, reload) {
         h('span', {}, h('strong', {}, 'Add new people automatically'), h('small', { class: 'muted block' }, 'Anyone in your company who signs in gets an account and a card in the company colours.'))),
       sso.claims.length > 0 && h('label', { class: 'check' },
         h('input', { type: 'checkbox', checked: sso.requireSso, onchange: (e) => save({ ...sso, requireSso: e.target.checked }) }),
-        h('span', {}, h('strong', {}, 'Require company sign-in'), h('small', { class: 'muted block' }, 'Members can no longer sign in with a password. The owner always can.'))));
+        h('span', {}, h('strong', {}, 'Require company sign-in'), h('small', { class: 'muted block' }, 'Members can no longer sign in with a password. The owner always can.'))),
+    ].filter(Boolean));
   };
   const save = async (next) => {
     try { draw(await api('/org/sso', { method: 'PUT', body: { autoCreate: next.autoCreate, requireSso: next.requireSso } })); toast('Saved'); }
@@ -1784,11 +1873,11 @@ function crmPanel(back = 'contacts') {
   const head = () => h('div', { class: 'row' }, h('span', { class: 'panel-icon sf' }, icon('cloud')), h('h2', { class: 'grow' }, 'Salesforce'));
   const load = async () => {
     let st;
-    try { st = await api('/crm'); } catch (err) { panel.replaceChildren(head(), h('p', { class: 'error' }, err.message)); return; }
+    try { st = await api('/crm'); } catch (err) { panel.replaceChildren(...[head(), h('p', { class: 'error' }, err.message)].filter(Boolean)); return; }
     crmConnected = st.connected;
     const connectHref = `/api/crm/salesforce/start${back === 'admin' ? '?back=admin' : ''}`;
     if (st.connected) {
-      panel.replaceChildren(head(),
+      panel.replaceChildren(...[head(),
         h('p', {}, h('span', { class: 'pill ok' }, icon('check'), 'Connected'), ' ', h('span', { class: 'muted small' }, st.userName ? `as ${st.userName}` : '')),
         h('p', { class: 'small muted' }, st.scope === 'company' ? 'Contacts captured by everyone in your company are sent to your company\'s Salesforce as leads, owned by the card holder when they are a Salesforce user.' : 'Your contacts are sent to Salesforce as leads.'),
         st.canManage && h('label', { class: 'check' },
@@ -1799,11 +1888,11 @@ function crmPanel(back = 'contacts') {
           h('a', { class: 'btn small', href: connectHref }, 'Reconnect'),
           h('button', { class: 'btn small danger', onclick: async () => {
             try { await api('/crm', { method: 'DELETE' }); toast('Salesforce disconnected'); load(); } catch (err) { toast(err.message); }
-          } }, 'Disconnect')));
+          } }, 'Disconnect'))].filter(Boolean));
       return;
     }
     if (!st.canManage) {
-      panel.replaceChildren(head(), h('p', { class: 'small muted' }, 'Your company has not connected Salesforce yet. Ask a company administrator to connect it on the Admin page.'));
+      panel.replaceChildren(...[head(), h('p', { class: 'small muted' }, 'Your company has not connected Salesforce yet. Ask a company administrator to connect it on the Admin page.')]);
       return;
     }
     const form = { loginUrl: st.loginUrl, clientId: st.clientId, clientSecret: '' };
@@ -1821,10 +1910,10 @@ function crmPanel(back = 'contacts') {
         h('button', { class: 'btn small', onclick: async () => {
           try { await api('/crm', { method: 'PUT', body: form }); toast('Saved'); load(); } catch (err) { toast(err.message); }
         } }, 'Save app details')));
-    panel.replaceChildren(head(),
+    panel.replaceChildren(...[head(),
       h('p', { class: 'small muted' }, 'Send the people you meet to Salesforce as leads: contacts shared on your card pages and cards or badges you scan.'),
       (st.mkApp || st.ownApp) ? h('a', { class: 'btn primary block', href: connectHref }, icon('cloud'), 'Connect Salesforce') : null,
-      own);
+      own].filter(Boolean));
   };
   load();
   return panel;
@@ -2140,14 +2229,30 @@ function scanScreen() {
 
 const escHtml = (s) => String(s || '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
+// The signature and background tools work for the signed-in owner (by card id) and, through /tools/…?u=&s=,
+// for anyone with the card's address, such as staff following the links in their company's export.
+const toolSubject = (e) => e && { card: e.card, slug: e.slug, username: me.user.username, link: cardUrl(e), orgLogo: (me.user.org && me.user.org.logo) || '' };
+
+function publicToolScreen(kind) {
+  const q = new URLSearchParams(location.search);
+  const holder = h('div', { class: 'stack' }, h('section', { class: 'glass panel' }, h('p', { class: 'muted' }, 'Loading…')));
+  api(`/public/card?u=${encodeURIComponent(q.get('u') || '')}&s=${encodeURIComponent(q.get('s') || '')}`).then((data) => {
+    if (data.inactive || !data.card) { holder.replaceChildren(missingScreen('This card is no longer active.')); return; }
+    const subject = { card: data.card, slug: data.slug, username: data.username, orgLogo: data.orgLogo || '',
+      link: `${location.origin}/${data.username}${data.slug ? '/' + data.slug : ''}` };
+    holder.replaceChildren(kind === 'signature' ? signatureScreen(subject) : backgroundScreen(subject));
+  }).catch((err) => holder.replaceChildren(missingScreen(err.message)));
+  return holder;
+}
+
 function signatureHtml(entry, opts) {
   const card = entry.card;
   const t = cardTheme(card);
-  const link = cardUrl(entry);
+  const link = entry.link;
   const abs = (path) => (path ? location.origin + path : '');
   const photo = opts.photo && card.photo ? abs(card.photo) : '';
-  const logoSrc = opts.logo ? abs(card.logo || (me.user.org && me.user.org.logo) || '') : '';
-  const qr = opts.qr ? `${location.origin}/api/public/qr.png?u=${encodeURIComponent(me.user.username)}&s=${encodeURIComponent(entry.slug)}` : '';
+  const logoSrc = opts.logo ? abs(card.logo || entry.orgLogo || '') : '';
+  const qr = opts.qr ? `${location.origin}/api/public/qr.png?u=${encodeURIComponent(entry.username)}&s=${encodeURIComponent(entry.slug)}` : '';
   const font = 'font-family:Arial,Helvetica,sans-serif;';
   const navy = t.deep;
   const gold = '#a8862e';
@@ -2176,14 +2281,14 @@ function signatureHtml(entry, opts) {
 function signaturePlain(entry) {
   const c = entry.card;
   return [c.name, [c.title, c.company].filter(Boolean).join(', '), ...(c.phones || []).slice(0, 2).map((p) => p.value),
-    (c.emails || [])[0]?.value, c.website, `Save my contact: ${cardUrl(entry)}`].filter(Boolean).join('\n');
+    (c.emails || [])[0]?.value, c.website, `Save my contact: ${entry.link}`].filter(Boolean).join('\n');
 }
 
 function signatureScreen(id) {
-  const entry = findCard(id);
+  const entry = typeof id === 'object' ? id : toolSubject(findCard(id));
   if (!entry) return missingScreen('That card is not in your account.');
   const card = entry.card;
-  const opts = { style: 'classic', photo: Boolean(card.photo), qr: true, logo: Boolean(card.logo || (me.user.org && me.user.org.logo)) };
+  const opts = { style: 'classic', photo: Boolean(card.photo), qr: true, logo: Boolean(card.logo || entry.orgLogo) };
   const preview = h('div', { class: 'sig-preview' });
   const draw = () => { preview.innerHTML = signatureHtml(entry, opts); };
   const toggle = (label, key, disabled) => h('label', { class: 'check inline' },
@@ -2212,7 +2317,7 @@ function signatureScreen(id) {
   };
   const download = () => {
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(card.name)} — email signature</title></head><body>${signatureHtml(entry, opts)}</body></html>`;
-    saveBlob(new Blob([html], { type: 'text/html' }), `signature-${me.user.username}${entry.slug ? '-' + entry.slug : ''}.htm`);
+    saveBlob(new Blob([html], { type: 'text/html' }), `signature-${entry.username}${entry.slug ? '-' + entry.slug : ''}.htm`);
   };
   draw();
   const how = [
@@ -2226,7 +2331,7 @@ function signatureScreen(id) {
     topbar('Email signature', '/'),
     h('section', { class: 'glass panel stack' },
       h('div', { class: 'row wrap' }, styles, h('span', { class: 'grow' }),
-        toggle('Photo', 'photo', !card.photo), toggle('QR code', 'qr'), toggle('Logo', 'logo', !(card.logo || (me.user.org && me.user.org.logo)))),
+        toggle('Photo', 'photo', !card.photo), toggle('QR code', 'qr'), toggle('Logo', 'logo', !(card.logo || entry.orgLogo))),
       preview,
       h('button', { class: 'btn primary block', onclick: copyRich }, icon('copy'), 'Copy signature'),
       h('button', { class: 'btn block', onclick: download }, icon('download'), 'Download as a file (.htm)')),
@@ -2252,17 +2357,17 @@ function saveBlob(blob, filename) {
 // ---------- video-call background ----------
 
 function backgroundScreen(id) {
-  const entry = findCard(id);
+  const entry = typeof id === 'object' ? id : toolSubject(findCard(id));
   if (!entry) return missingScreen('That card is not in your account.');
   const card = entry.card;
-  const opts = { theme: 'dark', side: 'left', qr: true, details: true, logo: Boolean(card.logo || (me.user.org && me.user.org.logo)) };
+  const opts = { theme: 'dark', side: 'left', qr: true, details: true, logo: Boolean(card.logo || entry.orgLogo) };
   const holder = h('div', { class: 'bg-preview' });
   let canvas = null;
   let logoImg = null;
   const draw = async () => {
-    if (opts.logo && !logoImg) logoImg = await loadImage(card.logo || me.user.org.logo).catch(() => null);
-    canvas = await drawCallBackground(card, cardUrl(entry), { theme: opts.theme, side: opts.side, details: opts.details,
-      qr: opts.qr ? qrMatrix(cardUrl(entry)) : null, logo: opts.logo ? logoImg : null });
+    if (opts.logo && !logoImg) logoImg = await loadImage(card.logo || entry.orgLogo).catch(() => null);
+    canvas = await drawCallBackground(card, entry.link, { theme: opts.theme, side: opts.side, details: opts.details,
+      qr: opts.qr ? qrMatrix(entry.link) : null, logo: opts.logo ? logoImg : null });
     canvas.setAttribute('aria-label', 'Background preview');
     holder.replaceChildren(canvas);
   };
@@ -2283,8 +2388,8 @@ function backgroundScreen(id) {
     h('section', { class: 'glass panel stack' },
       holder,
       h('div', { class: 'row wrap' }, seg('Theme', 'theme', [['dark', 'Dark'], ['light', 'Light']]), seg('Name on the', 'side', [['left', 'Left'], ['right', 'Right']])),
-      h('div', { class: 'row wrap' }, toggle('QR code', 'qr'), toggle('Email and phone', 'details'), toggle('Logo', 'logo', !(card.logo || (me.user.org && me.user.org.logo)))),
-      h('button', { class: 'btn primary block', onclick: () => canvas && canvas.toBlob((blob) => saveBlob(blob, `background-${me.user.username}${entry.slug ? '-' + entry.slug : ''}.jpg`), 'image/jpeg', 0.92) },
+      h('div', { class: 'row wrap' }, toggle('QR code', 'qr'), toggle('Email and phone', 'details'), toggle('Logo', 'logo', !(card.logo || entry.orgLogo))),
+      h('button', { class: 'btn primary block', onclick: () => canvas && canvas.toBlob((blob) => saveBlob(blob, `background-${entry.username}${entry.slug ? '-' + entry.slug : ''}.jpg`), 'image/jpeg', 0.92) },
         icon('download'), 'Download (1920 × 1080)')),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'How to use it'),
       h('p', { class: 'small muted' }, 'Zoom: Settings › Backgrounds & effects › + › Add image. Teams: before or during a meeting, Effects › Backgrounds › Add new. Google Meet: Apply visual effects › Backgrounds › Upload. Webex: Change virtual background › +.'),
@@ -2318,6 +2423,8 @@ const routes = [
   [/^\/scan$/, scanScreen, 'contacts', 'user'],
   [/^\/signature\/([a-z0-9]+)$/, signatureScreen, 'home', 'user'],
   [/^\/background\/([a-z0-9]+)$/, backgroundScreen, 'home', 'user'],
+  [/^\/tools\/signature$/, () => publicToolScreen('signature'), null, null],
+  [/^\/tools\/background$/, () => publicToolScreen('background'), null, null],
   [/^\/welcome-password$/, setPasswordScreen, null, 'user'],
   [/^\/([a-z0-9][a-z0-9_-]{2,29})(?:\/([a-z0-9][a-z0-9-]{0,29}))?$/, publicScreen, null, null],
 ];

@@ -8,6 +8,8 @@ import { decrypt, encrypt, randomToken, readSigned, sha256b64url, signValue } fr
 import { SSO_PROVIDERS, authorizeUrl, finishSignIn, ssoStatus, verifyAppleSignIn } from './sso.js';
 import { salesforceAuthorizeUrl, salesforceExchange, salesforceHost, salesforcePushLead, salesforceRefresh, salesforceRevoke, salesforceWho } from './crm.js';
 import { readBusinessCard } from './scan.js';
+import { fillDesign, printFields, sampleDesign, sanitizeSvg } from './print.js';
+import { zip } from './zip.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -49,6 +51,8 @@ const ADDED_COLUMNS = [
   ['users', 'org_id', 'TEXT'],
   ['users', 'role', 'TEXT'],
   ['users', 'last_login', 'INTEGER'],
+  // The temporary password an administrator set, encrypted, kept only until the person chooses their own.
+  ['users', 'temp_password', 'TEXT'],
   ['cards', 'active', 'INTEGER NOT NULL DEFAULT 1'],
   ['cards', 'inactive_message', 'TEXT'],
   ['contacts', 'user_id', 'TEXT'],
@@ -144,7 +148,7 @@ const RESERVED = new Set([
   'api', 'new', 'edit', 'share', 'inbox', 'settings', 'privacy', 'terms', 'login', 'register', 'logout',
   'account', 'admin', 'icons', 'vendor', 'assets', 'static', 'about', 'help', 'support', 'www', 'app',
   'mkcards', 'mk-cards', 'me', 'public', 'null', 'undefined', 'index', 'sw', 'manifest', 'favicon', 'vcard', 'contacts',
-  'scan', 'signature', 'background', 'welcome-password', 'crm', 'auth', 'sso', 'leads', 'billing', 'pricing', 'delete-account',
+  'scan', 'signature', 'background', 'welcome-password', 'crm', 'auth', 'sso', 'leads', 'billing', 'pricing', 'delete-account', 'tools', 'print',
 ]);
 const USERNAME = /^[a-z0-9][a-z0-9_-]{2,29}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,29}$/;
@@ -284,6 +288,13 @@ async function api(request, env, url) {
   if (path === '/org/import' && method === 'POST') return importMembers(request, env, url);
   if (path === '/org/logo' && method === 'PUT') return setOrgLogo(request, env);
   if (path === '/org/members.csv' && method === 'GET') return membersCsv(request, env, url);
+  if (path === '/org/design' && method === 'PUT') return uploadDesign(request, env);
+  if (path === '/org/print.zip' && method === 'GET') return printAll(request, env, url);
+  let design = /^\/org\/design\/(front|back)(\.svg)?$/.exec(path);
+  if (design && method === 'GET') return downloadDesign(request, env, url, design[1]);
+  if (design && method === 'DELETE') return removeDesign(request, env, design[1]);
+  design = /^\/org\/print\/([a-z0-9]{6,20})\/(front|back)\.svg$/.exec(path);
+  if (design && method === 'GET') return printCard(request, env, url, design[1], design[2]);
   if (path === '/org/activity.csv' && method === 'GET') return activityCsv(request, env, url, true);
 
   if (path === '/me' && method === 'GET') return me(request, env);
@@ -455,7 +466,7 @@ async function changePassword(request, env) {
   // Other devices are signed out; this one stays logged in.
   const keep = await sha256(readCookie(request, SESSION_COOKIE));
   await env.DB.batch([
-    env.DB.prepare('UPDATE users SET pass_hash = ?, must_change = 0 WHERE id = ?').bind(await hashPassword(next), user.id),
+    env.DB.prepare('UPDATE users SET pass_hash = ?, must_change = 0, temp_password = NULL WHERE id = ?').bind(await hashPassword(next), user.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').bind(user.id, keep),
   ]);
   return json({ ok: true });
@@ -828,23 +839,161 @@ async function orgOverview(request, env) {
     org: { id: org.id, name: org.name, plan: org.plan, settings: cleanOrgSettings(JSON.parse(org.data || '{}')), defaultMessage: DEFAULT_LEFT_MESSAGE },
     members: await orgMembers(env, user.org_id),
     sso: await orgSso(env, user.org_id),
+    design: await designStatus(env, user.org_id),
     me: user.id,
   });
 }
 
+// Every person's cards with all their details and ready-made links, for administrators. Temporary passwords
+// appear only until the person has chosen their own.
+const EXPORT_HEAD = [
+  'email', 'username', 'temporary_password', 'role', 'status', 'name', 'title', 'department', 'company', 'card_label',
+  'mobile', 'office', 'whatsapp', 'whatsapp_message', 'card_email', 'website', 'linkedin', 'address', 'bio',
+  'name_ar', 'title_ar', 'department_ar', 'company_ar', 'address_ar', 'bio_ar',
+  'card_link', 'save_contact_link', 'qr_code_png', 'email_signature_link', 'zoom_background_link',
+  'print_front_svg', 'print_back_svg', 'views', 'contact_saves', 'last_login',
+];
+
 async function membersCsv(request, env, url) {
   const user = await requireUser(request, env);
   requireAdminRole(user);
-  const members = await orgMembers(env, user.org_id);
-  const rows = [['email', 'username', 'name', 'title', 'department', 'mobile', 'office', 'whatsapp', 'role', 'status', 'card_link', 'views', 'contact_saves']];
-  for (const m of members) {
-    const main = m.cards.find((c) => c.slug === '') || {};
-    const phone = (label) => ((main.phones || []).find((p) => p.label === label) || {}).value || '';
-    rows.push([m.email, m.username, m.name, m.title, m.department, phone('mobile'), phone('work'), main.whatsapp || '', m.role,
-      m.active ? (m.pending ? 'invited' : 'active') : 'deactivated', `${url.origin}/${m.username}`,
-      m.cards.reduce((n, c) => n + c.views, 0), m.cards.reduce((n, c) => n + c.saves, 0)]);
+  const { results } = await env.DB.prepare(
+    `SELECT u.id AS user_id, u.username, u.email, u.role, u.active AS user_active, u.must_change, u.temp_password, u.last_login,
+            c.id, c.slug, c.data, c.active, c.views,
+            (SELECT COUNT(*) FROM events e WHERE e.card_id = c.id AND e.kind = 'save') AS saves
+     FROM users u LEFT JOIN cards c ON c.user_id = u.id WHERE u.org_id = ? ORDER BY u.created_at, c.slug = '' DESC, c.created_at`,
+  ).bind(user.org_id).all();
+  const rows = [EXPORT_HEAD];
+  for (const r of results) {
+    const card = r.data ? readCard(r.data) : { phones: [], emails: [], links: [], ar: {} };
+    const phone = (label) => ((card.phones || []).find((p) => p.label === label) || {}).value || '';
+    const q = `u=${encodeURIComponent(r.username)}&s=${encodeURIComponent(r.slug || '')}`;
+    const link = `${url.origin}/${r.username}${r.slug ? '/' + r.slug : ''}`;
+    let temporary = '';
+    if (r.must_change && r.temp_password) temporary = await decrypt(env, r.temp_password).catch(() => '');
+    const ar = card.ar || {};
+    rows.push([
+      r.email, r.username, temporary, r.role || 'member',
+      !r.user_active ? 'deactivated' : r.must_change ? 'invited' : r.active === 0 ? 'card off' : 'active',
+      card.name, card.title, card.department, card.company, card.label || (r.slug ? r.slug : 'Main'),
+      phone('mobile'), phone('work'), card.whatsapp, card.whatsappMessage, ((card.emails || [])[0] || {}).value || '', card.website,
+      ((card.links || []).find((l) => l.type === 'linkedin') || {}).url || '', card.address, card.bio,
+      ar.name, ar.title, ar.department, ar.company, ar.address, ar.bio,
+      r.id ? link : '', r.id ? `${url.origin}/api/public/vcard?${q}` : '', r.id ? `${url.origin}/api/public/qr.png?${q}` : '',
+      r.id ? `${url.origin}/tools/signature?${q}` : '', r.id ? `${url.origin}/tools/background?${q}` : '',
+      r.id ? `${url.origin}/api/org/print/${r.id}/front.svg` : '', r.id ? `${url.origin}/api/org/print/${r.id}/back.svg` : '',
+      r.views || 0, r.saves || 0, r.last_login ? new Date(r.last_login).toISOString().slice(0, 10) : '',
+    ]);
   }
-  return csvResponse(csv(rows), 'mkcards-members.csv');
+  return csvResponse(csv(rows), 'mkcards-staff-cards.csv');
+}
+
+// ---------- print card designs (company workspaces) ----------
+
+const DESIGN_KINDS = { front: 'design-front', back: 'design-back' };
+
+async function orgLogoDataUri(env, orgId) {
+  const org = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(orgId).first();
+  const logoPath = org && JSON.parse(org.data || '{}').logo;
+  const logo = logoPath && await mediaBytes(env, logoPath);
+  return logo ? `data:${logo.type};base64,${bytesToBase64(logo.bytes)}` : '';
+}
+
+/** The company's design for one side, or MK Cards' own design until one is uploaded. */
+async function designFor(env, orgId, side) {
+  const row = await env.DB.prepare('SELECT data FROM media WHERE card_id = ? AND kind = ?').bind(`org:${orgId}`, DESIGN_KINDS[side]).first();
+  if (row) return { svg: new TextDecoder().decode(new Uint8Array(row.data)), custom: true };
+  const org = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(orgId).first();
+  const accent = cleanOrgSettings(JSON.parse((org && org.data) || '{}')).accent;
+  return { svg: sampleDesign(side, { accent, logo: await orgLogoDataUri(env, orgId) }), custom: false };
+}
+
+async function designStatus(env, orgId) {
+  const { results } = await env.DB.prepare('SELECT kind, created_at FROM media WHERE card_id = ? AND kind IN (?, ?)')
+    .bind(`org:${orgId}`, DESIGN_KINDS.front, DESIGN_KINDS.back).all();
+  const at = (kind) => (results.find((r) => r.kind === kind) || {}).created_at || 0;
+  return { front: at(DESIGN_KINDS.front), back: at(DESIGN_KINDS.back) };
+}
+
+async function uploadDesign(request, env) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const body = await readJson(request, 3_000_000);
+  const side = body.side === 'back' ? 'back' : body.side === 'front' ? 'front' : null;
+  if (!side) throw new HttpError(400, 'Choose the front or the back.');
+  let svg;
+  try { svg = sanitizeSvg(body.svg); } catch (err) { throw new HttpError(400, err.message); }
+  const bytes = new TextEncoder().encode(svg);
+  if (bytes.length > 2_500_000) throw new HttpError(413, 'That design is too large (2.5 MB at most). Embed smaller images.');
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM media WHERE card_id = ? AND kind = ?').bind(`org:${user.org_id}`, DESIGN_KINDS[side]),
+    env.DB.prepare('INSERT INTO media (id, user_id, card_id, kind, type, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(randomId(16), user.id, `org:${user.org_id}`, DESIGN_KINDS[side], 'image/svg+xml', bytes.buffer, Date.now()),
+  ]);
+  const placeholders = [...new Set((svg.match(/\{\{\s*([a-z_]+)\s*\}\}/gi) || []).map((p) => p.replace(/[{}\s]/g, '').toLowerCase()))];
+  return json({ ok: true, design: await designStatus(env, user.org_id), placeholders, hasQr: /\bid\s*=\s*("|')qr\1/i.test(svg) });
+}
+
+async function removeDesign(request, env, side) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  await env.DB.prepare('DELETE FROM media WHERE card_id = ? AND kind = ?').bind(`org:${user.org_id}`, DESIGN_KINDS[side]).run();
+  return json({ ok: true, design: await designStatus(env, user.org_id) });
+}
+
+const svgResponse = (svg, filename) => new Response(svg, {
+  headers: {
+    'content-type': 'image/svg+xml; charset=utf-8', 'content-disposition': `attachment; filename="${filename}"`, 'cache-control': 'private, no-store',
+    // Opened directly, the drawing can show pictures but never run anything.
+    'content-security-policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:",
+  },
+});
+
+/** The design as it is (or MK Cards' starting design), for a designer to edit. */
+async function downloadDesign(request, env, url, side) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const { svg } = url.searchParams.has('sample')
+    ? { svg: sampleDesign(side, { accent: cleanOrgSettings(JSON.parse((await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(user.org_id).first()).data || '{}')).accent, logo: await orgLogoDataUri(env, user.org_id) }) }
+    : await designFor(env, user.org_id, side);
+  return svgResponse(svg, `mkcards-template-${side}.svg`);
+}
+
+async function printableCard(env, url, cardRow, design) {
+  const card = readCard(cardRow.data);
+  const link = `${url.origin}/${cardRow.username}${cardRow.slug ? '/' + cardRow.slug : ''}`;
+  return fillDesign(design, printFields(card, { link, username: cardRow.username }), link);
+}
+
+/** One person's card, filled in, ready for print. */
+async function printCard(request, env, url, cardId, side) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const row = await env.DB.prepare('SELECT c.data, c.slug, u.username FROM cards c JOIN users u ON u.id = c.user_id WHERE c.id = ? AND u.org_id = ?')
+    .bind(cardId, user.org_id).first();
+  if (!row) throw new HttpError(404, 'Card not found.');
+  const { svg } = await designFor(env, user.org_id, side);
+  return svgResponse(await printableCard(env, url, row, svg), `${row.username}${row.slug ? '-' + row.slug : ''}-${side}.svg`);
+}
+
+/** Every active person's main card, front and back, in one ZIP for the printer. */
+async function printAll(request, env, url) {
+  const user = await requireUser(request, env);
+  requireAdminRole(user);
+  const { results } = await env.DB.prepare(
+    "SELECT c.data, c.slug, u.username FROM cards c JOIN users u ON u.id = c.user_id WHERE u.org_id = ? AND u.active = 1 AND c.active = 1 AND c.slug = '' ORDER BY u.username",
+  ).bind(user.org_id).all();
+  if (!results.length) throw new HttpError(404, 'No active cards to print.');
+  const [front, back] = [await designFor(env, user.org_id, 'front'), await designFor(env, user.org_id, 'back')];
+  const enc = new TextEncoder();
+  const files = {};
+  for (const row of results) {
+    files[`front/${row.username}-front.svg`] = enc.encode(await printableCard(env, url, row, front.svg));
+    files[`back/${row.username}-back.svg`] = enc.encode(await printableCard(env, url, row, back.svg));
+  }
+  return new Response(zip(files), {
+    headers: { 'content-type': 'application/zip', 'content-disposition': 'attachment; filename="mkcards-print-cards.zip"', 'cache-control': 'private, no-store' },
+  });
 }
 
 // A small CSV reader (quoted fields, commas and new lines inside quotes).
@@ -895,12 +1044,18 @@ async function importMembers(request, env, url) {
     try {
       if (!isEmail(email)) throw new HttpError(400, 'Email address is missing or not valid.');
       const role = ['admin', 'member'].includes(col(r, 'role').toLowerCase()) ? col(r, 'role').toLowerCase() : 'member';
+      const temporary = col(r, 'temporary_password', 'password');
+      if (temporary && (temporary.length < 8 || temporary.length > 200)) throw new HttpError(400, 'The temporary password needs at least 8 characters.');
       const phones = [['mobile', col(r, 'mobile', 'phone')], ['work', col(r, 'office', 'work_phone')]].filter(([, v]) => v).map(([label, value]) => ({ label, value }));
+      const linkedin = col(r, 'linkedin');
       const fields = {
         name, title: col(r, 'title', 'job_title'), department: col(r, 'department'), company: col(r, 'company') || org.name,
+        label: col(r, 'card_label'), bio: col(r, 'bio'),
         phones, emails: [{ label: 'work', value: col(r, 'card_email', 'work_email') || email }], whatsapp: col(r, 'whatsapp'),
-        website: col(r, 'website'), address: col(r, 'address'),
-        ar: { name: col(r, 'name_ar'), title: col(r, 'title_ar'), department: col(r, 'department_ar'), company: col(r, 'company_ar') },
+        whatsappMessage: col(r, 'whatsapp_message'), website: col(r, 'website'), address: col(r, 'address'),
+        links: linkedin ? [{ type: 'linkedin', url: linkedin }] : [],
+        ar: { name: col(r, 'name_ar'), title: col(r, 'title_ar'), department: col(r, 'department_ar'), company: col(r, 'company_ar'),
+          address: col(r, 'address_ar'), bio: col(r, 'bio_ar') },
       };
       const existing = await env.DB.prepare('SELECT id, org_id, username FROM users WHERE email = ?').bind(email).first();
       if (existing && existing.org_id !== user.org_id) throw new HttpError(409, 'This email already has its own MK Cards account.');
@@ -913,29 +1068,46 @@ async function importMembers(request, env, url) {
           const merged = { ...current };
           for (const [k, v] of Object.entries(fields)) {
             if (k === 'ar') merged.ar = { ...current.ar, ...Object.fromEntries(Object.entries(v).filter(([, x]) => x)) };
+            else if (k === 'links') { if (v.length) merged.links = [...(current.links || []).filter((l) => l.type !== 'linkedin'), ...v]; }
             else if (Array.isArray(v) ? v.length : v) merged[k] = v;
           }
           const card = cleanCard(merged);
           card.photo = current.photo;
+          card.logo = current.logo;
           await env.DB.prepare('UPDATE cards SET data = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(card), Date.now(), main.id).run();
         }
         if (existing.id !== user.id) await env.DB.prepare('UPDATE users SET role = ? WHERE id = ? AND role != ?').bind(role, existing.id, 'owner').run();
-        results.push({ ...result, username: existing.username, status: 'updated' });
+        // A temporary password in the row resets theirs; they choose a new one at their next sign-in.
+        if (temporary && existing.id !== user.id) {
+          await env.DB.batch([
+            env.DB.prepare('UPDATE users SET pass_hash = ?, must_change = 1, temp_password = ? WHERE id = ?')
+              .bind(await hashPassword(temporary), await encrypt(env, temporary), existing.id),
+            env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(existing.id),
+          ]);
+        }
+        results.push({ ...result, username: existing.username, status: 'updated', password: temporary && existing.id !== user.id ? temporary : undefined,
+          link: `${url.origin}/${existing.username}` });
         continue;
       }
 
       if (!name) throw new HttpError(400, 'Name is missing.');
-      let base = slugify(col(r, 'username') || email.split('@')[0]).replace(/[^a-z0-9_-]/g, '').slice(0, 26);
-      if (!USERNAME.test(base) || RESERVED.has(base)) base = `user-${randomId(4)}`;
-      let username = base;
-      for (let n = 2; await env.DB.prepare('SELECT 1 FROM users WHERE username = ?').bind(username).first(); n++) username = `${base}-${n}`;
-      const password = tempPassword();
+      // The administrator may choose the username; otherwise it is made from the email address.
+      let username;
+      const wanted = col(r, 'username').toLowerCase();
+      if (wanted) {
+        if (!USERNAME.test(wanted) || RESERVED.has(wanted)) throw new HttpError(400, `"${wanted}" cannot be a username: use 3–30 letters, numbers, hyphens or underscores.`);
+        if (await env.DB.prepare('SELECT 1 FROM users WHERE username = ?').bind(wanted).first()) throw new HttpError(409, `The username "${wanted}" is already taken.`);
+        username = wanted;
+      } else {
+        username = await freeUsername(env, email.split('@')[0]);
+      }
+      const password = temporary || tempPassword();
       const card = cleanCard({ ...fields, accent: settings.accent, style: 'aurora' });
       const id = randomId(16);
       const now = Date.now();
       await env.DB.batch([
-        env.DB.prepare('INSERT INTO users (id, username, email, pass_hash, created_at, must_change, org_id, role) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
-          .bind(id, username, email, await hashPassword(password), now, user.org_id, role),
+        env.DB.prepare('INSERT INTO users (id, username, email, pass_hash, created_at, must_change, org_id, role, temp_password) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)')
+          .bind(id, username, email, await hashPassword(password), now, user.org_id, role, await encrypt(env, password)),
         env.DB.prepare("INSERT INTO cards (id, user_id, slug, data, created_at, updated_at) VALUES (?, ?, '', ?, ?, ?)")
           .bind(randomId(12), id, JSON.stringify(card), now, now),
       ]);
@@ -992,7 +1164,7 @@ async function resetMemberPassword(request, env, memberId) {
   if (member.role === 'owner') throw new HttpError(403, 'The owner changes their own password.');
   const password = tempPassword();
   await env.DB.batch([
-    env.DB.prepare('UPDATE users SET pass_hash = ?, must_change = 1 WHERE id = ?').bind(await hashPassword(password), member.id),
+    env.DB.prepare('UPDATE users SET pass_hash = ?, must_change = 1, temp_password = ? WHERE id = ?').bind(await hashPassword(password), await encrypt(env, password), member.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(member.id),
   ]);
   return json({ password });
@@ -1776,7 +1948,8 @@ async function publicCard(env, url) {
   }
   // contactEmail is the owner's account email: the page's "share your details" button writes to it.
   // reportEmail: where visitors can report a card that breaks the rules.
-  return json({ username: row.username, slug: row.slug, card: readCard(row.data), contactEmail: row.email,
+  const orgLogo = row.org_id ? JSON.parse((await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(row.org_id).first() || { data: '{}' }).data || '{}').logo || '' : '';
+  return json({ username: row.username, slug: row.slug, card: readCard(row.data), contactEmail: row.email, orgLogo,
     reportEmail: isEmail(env.SUPPORT_EMAIL || '') ? env.SUPPORT_EMAIL : '' });
 }
 

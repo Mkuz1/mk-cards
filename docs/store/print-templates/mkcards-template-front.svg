@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MK Cards print template. Size: 85 x 55 mm card + 3 mm bleed (91 x 61 mm). Keep text 5 mm inside the trim.
+     Placeholders: {{name}} {{title}} {{department}} {{company}} {{mobile}} {{office}} {{phone}} {{whatsapp}} {{email}} {{website}} {{website_url}} {{address}} {{linkedin}} {{link}} {{card_url}} {{username}} {{initials}} {{name_ar}} {{title_ar}} {{department_ar}} {{company_ar}} {{address_ar}}
+     The QR code replaces the rectangle with id="qr" (data-color sets its colour).
+     Lines inside a group with data-stack="spacing" are left out when their fields are empty, and the rest move up. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="91mm" height="61mm" viewBox="0 0 91 61">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a5ba8"/><stop offset="1" stop-color="#0f2343"/></linearGradient></defs>
+  <rect width="91" height="61" fill="url(#bg)"/>
+  <rect x="0" y="0" width="91" height="0.8" fill="#b0892f"/>
+  <text x="9" y="27" font-family="Helvetica, Arial, sans-serif" font-size="2.6" letter-spacing="0.6" fill="#d5b757" font-weight="bold">{{company}}</text>
+  <text x="9" y="35" font-family="Georgia, 'Times New Roman', serif" font-size="6" font-weight="bold" fill="#ffffff">{{name}}</text>
+  <text x="9" y="40" font-family="Helvetica, Arial, sans-serif" font-size="2.9" fill="#ffffff" fill-opacity="0.85">{{title}}</text>
+  <rect x="9" y="43" width="10" height="0.5" fill="#b0892f"/>
+  <text x="82" y="52" text-anchor="end" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" direction="rtl" fill="#ffffff" fill-opacity="0.9">{{name_ar}}</text>
+</svg>

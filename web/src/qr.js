@@ -91,3 +91,11 @@ function concat(parts) {
   }
   return out;
 }
+
+/** The QR code as one SVG path (one unit per module) for placing inside another drawing, such as a print card. */
+export function qrPath(text) {
+  const { n, dark } = matrix(text);
+  let d = '';
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (dark(y, x)) d += `M${x} ${y}h1v1h-1z`;
+  return { n, d };
+}

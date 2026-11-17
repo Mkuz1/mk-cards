@@ -226,3 +226,18 @@ The buttons appear once these Worker secrets are set (Cloudflare dashboard › W
 A company admin connects their tenant/domain on the Admin page by signing in once with a work account, then can add
 people automatically and require company sign-in. People can also connect Microsoft/Google to their own account
 from the Account page.
+
+## Company tools (v2.4)
+
+- **Bulk import** (Admin › Import people): CSV with every card field (`Import template`). Columns `username` and
+  `temporary_password` are optional: empty usernames are made from the email, empty passwords are generated.
+  Everyone with a temporary password must choose their own at first sign-in. A row for someone already in the company
+  updates their main card (and resets their password if it has a temporary_password).
+- **Export staff cards** (Admin): one row per card with all details, `card_link`, `save_contact_link`, `qr_code_png`,
+  `email_signature_link` and `zoom_background_link` (public pages: `/tools/signature?u=…&s=…`, `/tools/background?u=…&s=…`),
+  `print_front_svg` / `print_back_svg` (admins only), the username, and the temporary password until it is changed
+  (stored encrypted with `TOKEN_KEY`, deleted when the person sets their own).
+- **Printed cards** (Admin › Printed business cards): upload a front and back SVG per company with placeholders
+  (`{{name}}`, `{{title}}`, `{{mobile}}`… see `web/src/print.js`) and a rectangle `id="qr"` for the QR code. Lines inside
+  `<g data-stack="4.5">` disappear when empty. Download one person's card or everyone's as a ZIP of SVGs.
+  Uploaded SVGs are cleaned (no scripts, no external files). Starting templates: `docs/store/print-templates/`.

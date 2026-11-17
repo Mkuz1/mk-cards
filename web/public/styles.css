@@ -516,3 +516,9 @@ body.in-app #app { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
 }
 body.card-page .vc-report { text-align: center; margin-top: -6px; font-size: 12px; }
 body.card-page .vc-report a { color: rgba(255, 255, 255, 0.45); }
+
+/* Printed card designs */
+.print-preview { aspect-ratio: 91 / 61; border-radius: 10px; border: 1px solid var(--hairline); background: #fff repeating-conic-gradient(#f2f4f8 0 25%, #fff 0 50%) 0 0 / 16px 16px; display: grid; place-items: center; overflow: hidden; }
+.print-preview img { width: 100%; height: 100%; object-fit: contain; display: block; box-shadow: 0 10px 24px -14px rgba(13, 27, 51, 0.5); }
+.help-panel summary { cursor: pointer; }
+.help-panel ol, .help-panel ul { margin: 6px 0 0 18px; padding: 0; display: grid; gap: 6px; }
