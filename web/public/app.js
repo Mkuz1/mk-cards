@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCallBackground, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.3.1'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.3.2'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -394,8 +394,10 @@ const WALLET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 function walletButtons(entry) {
   const ready = me.wallet || {};
   const inAndroidApp = Boolean(native) && isAndroid;
+  const inIPhoneApp = Boolean(native) && !isAndroid;
+  // Each app offers its own phone's wallet only: Apple Wallet in the iPhone app, Google Wallet in the Android app.
   const apple = ready.apple && !inAndroidApp && walletButton(`/api/cards/${entry.id}/wallet/apple.pkpass`, 'Apple Wallet', 'apple');
-  const google = ready.google && walletButton(`/api/cards/${entry.id}/wallet/google`, 'Google Wallet', 'google');
+  const google = ready.google && !inIPhoneApp && walletButton(`/api/cards/${entry.id}/wallet/google`, 'Google Wallet', 'google');
   const list = (isApple ? [apple, google] : [google, apple]).filter(Boolean);
   if (!list.length) return null;
   return h('div', { class: 'wallet-row' }, ...list);
