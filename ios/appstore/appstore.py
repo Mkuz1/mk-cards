@@ -258,6 +258,14 @@ def status():
     attached = (v["data"]["relationships"]["build"].get("data") or {}).get("id")
     names = {b["id"]: b["attributes"]["version"] for b in builds["data"]}
     subs = call("GET", f"/v1/reviewSubmissions?filter[app]={APP}&limit=10")["data"]
+    item_rows = []
+    for sub in subs:
+        items = call("GET", f"/v1/reviewSubmissions/{sub['id']}/items?include=appStoreVersion")["data"]
+        item_rows += [f"{x['attributes'].get('state')}:{(x['relationships'].get('appStoreVersion', {}).get('data') or {}).get('id') == VID}" for x in items]
+    rd = call("GET", f"/v1/appStoreVersions/{VID}/appStoreReviewDetail", ok=(200, 404)).get("data") or {}
+    filled = [k for k in ("contactFirstName", "contactLastName", "contactPhone", "contactEmail", "demoAccountName", "demoAccountPassword")
+              if (rd.get("attributes") or {}).get(k)]
+    print("review detail filled:", filled, "| items:", item_rows, flush=True)
     return (f"builds {', '.join(rows)} | version {v['data']['attributes'].get('versionString')} "
             f"{v['data']['attributes'].get('appStoreState') or v['data']['attributes'].get('appVersionState')} attached={names.get(attached, attached)} | "
             f"submissions {', '.join(x['attributes'].get('state', '?') for x in subs)}")
@@ -267,20 +275,30 @@ def status():
 def submit():
     subs = call("GET", f"/v1/reviewSubmissions?filter[app]={APP}&filter[platform]=IOS&limit=20")["data"]
     states = {x["id"]: x["attributes"].get("state") for x in subs}
-    busy = [i for i, st in states.items() if st in ("WAITING_FOR_REVIEW", "IN_REVIEW")]
-    if busy:
+    if any(st in ("WAITING_FOR_REVIEW", "IN_REVIEW") for st in states.values()):
         return "already waiting for review"
     ready = [i for i, st in states.items() if st in ("UNRESOLVED_ISSUES", "READY_FOR_REVIEW")]
-    if ready:
-        sid = ready[0]
-    else:
-        sid = call("POST", "/v1/reviewSubmissions", {"data": {"type": "reviewSubmissions", "attributes": {"platform": "IOS"},
-            "relationships": {"app": {"data": {"type": "apps", "id": APP}}}}})["data"]["id"]
+    sid = ready[0] if ready else call("POST", "/v1/reviewSubmissions", {"data": {"type": "reviewSubmissions",
+        "attributes": {"platform": "IOS"}, "relationships": {"app": {"data": {"type": "apps", "id": APP}}}}})["data"]["id"]
+    # The version must be an item of the submission and ready; after a rejection it can drop out and need adding back.
+    items = call("GET", f"/v1/reviewSubmissions/{sid}/items?include=appStoreVersion")["data"]
+    mine = [x for x in items if (x["relationships"].get("appStoreVersion", {}).get("data") or {}).get("id") == VID]
+    notes = []
+    for x in mine:
+        if x["attributes"].get("state") not in ("READY_FOR_REVIEW", "ACCEPTED"):
+            try:
+                call("DELETE", f"/v1/reviewSubmissionItems/{x['id']}")
+                notes.append(f"removed {x['attributes'].get('state')} item")
+            except RuntimeError as e:
+                notes.append(f"could not remove item: {e}")
+            mine = []
+    if not mine:
         call("POST", "/v1/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {
             "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sid}},
             "appStoreVersion": {"data": {"type": "appStoreVersions", "id": VID}}}}})
+        notes.append("added the version")
     call("PATCH", f"/v1/reviewSubmissions/{sid}", {"data": {"type": "reviewSubmissions", "id": sid, "attributes": {"submitted": True}}})
-    return f"submitted (was {states.get(sid, 'new')})"
+    return f"submitted (was {states.get(sid, 'new')}; {', '.join(notes) or 'version already in it'})"
 
 
 ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
