@@ -92,9 +92,11 @@ struct ContactsView: View {
     private func load() async {
         do {
             struct Reply: Decodable { let contacts: [Contact] }
-            contacts = try await model.get("/api/contacts", as: Reply.self).contacts
+            await model.flushPending()
+            contacts = model.pendingContacts + (try await model.cachedGet("/api/contacts", name: "contacts", as: Reply.self).contacts)
         } catch {
-            if !loaded { model.alert = error.localizedDescription }
+            contacts = model.pendingContacts + contacts.filter { $0.id > 0 }
+            if !loaded, !model.offline { model.alert = error.localizedDescription }
         }
         crm = try? await model.get("/api/crm", as: CRMState.self)
         loaded = true
@@ -133,8 +135,12 @@ struct ContactRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(contact.name).font(.body.weight(.semibold)).foregroundStyle(Theme.ink)
                 if !contact.role.isEmpty { Text(contact.role).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
-                Text([contact.date.formatted(date: .abbreviated, time: .omitted), contact.event].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.tertiary)
+                if contact.id < 0 {
+                    Label("Waiting to upload", systemImage: "icloud.and.arrow.up").font(.caption).foregroundStyle(.orange)
+                } else {
+                    Text([contact.date.formatted(date: .abbreviated, time: .omitted), contact.event].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
             }
             Spacer(minLength: 0)
             if contact.crm != nil { Image(systemName: "cloud.fill").font(.caption).foregroundStyle(Color(red: 0.09, green: 0.6, blue: 0.76)) }
@@ -186,7 +192,7 @@ struct ContactDetailView: View {
             }
             Section {
                 Button { ContactSaver.present(contact) } label: { Label("Save to iPhone Contacts", systemImage: "person.crop.circle.badge.plus") }
-                if crmConnected {
+                if crmConnected && contact.id > 0 {
                     if contact.crm != nil || sentId != nil {
                         Label("In Salesforce", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                     } else {
@@ -198,8 +204,12 @@ struct ContactDetailView: View {
                     }
                 }
             }
-            Section {
-                Button("Delete contact", role: .destructive) { onDelete(); dismiss() }
+            if contact.id > 0 {
+                Section {
+                    Button("Delete contact", role: .destructive) { onDelete(); dismiss() }
+                }
+            } else {
+                Section { Text("Saved on this iPhone. It uploads when you're back online.").font(.footnote).foregroundStyle(.secondary) }
             }
         }
         .listStyle(.insetGrouped)

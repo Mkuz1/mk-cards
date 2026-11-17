@@ -40,7 +40,7 @@ struct ScanView: View {
                         Label("\(savedName) saved to your contacts", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green).font(.subheadline.weight(.semibold))
                     }
-                    Text("Photos are only used to read the details and are not kept.").font(.footnote).foregroundStyle(.tertiary)
+                    Text("Photos are only used to read the details and are not kept. Scanning works offline too: contacts are kept on your iPhone and uploaded later.").font(.footnote).foregroundStyle(.tertiary)
                 }
                 .padding(20)
             }
@@ -125,7 +125,8 @@ struct ScanView: View {
             }
             draft = d
         } catch {
-            model.alert = error.localizedDescription
+            // Offline (or the reader failed): use what the iPhone itself read from the card.
+            if case AppError.offline = error { model.offline = true } else { model.alert = error.localizedDescription }
             draft = QRContact.fromText(result.text, event: event)
         }
     }
@@ -181,6 +182,13 @@ struct ReviewContactView: View {
             try await model.change("/api/contacts", json: draft.json)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             onSaved(draft.name)
+            dismiss()
+        } catch AppError.offline {
+            // No connection: keep it on the phone and send it later.
+            model.queueContact(draft.json)
+            model.offline = true
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            onSaved("\(draft.name) (on this iPhone until you're back online)")
             dismiss()
         } catch {
             self.error = error.localizedDescription

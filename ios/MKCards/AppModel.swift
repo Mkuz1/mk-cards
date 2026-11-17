@@ -131,9 +131,11 @@ struct PageRequest: Equatable {
 
 enum AppError: LocalizedError {
     case message(String)
+    case offline
     var errorDescription: String? {
         switch self {
         case .message(let text): return text
+        case .offline: return "You're offline. Check your connection and try again."
         }
     }
 }
@@ -154,6 +156,10 @@ final class AppModel: ObservableObject {
     @Published var openPath: PageRequest?
     /// The card shown on the Share tab.
     @Published var shareCardId: String?
+    /// True while the server cannot be reached; screens then show the copy saved on the phone.
+    @Published var offline = false
+    /// Contacts saved while offline, waiting to be sent.
+    @Published var pending: [[String: Any]] = []
 
     let site: URL = {
         let value = Bundle.main.object(forInfoDictionaryKey: "MKSiteURL") as? String ?? "https://mkcards.pages.dev"
@@ -200,7 +206,7 @@ final class AppModel: ObservableObject {
         do {
             (data, response) = try await NoRedirects.session.data(for: request)
         } catch {
-            throw AppError.message("No connection. Check your internet and try again.")
+            throw AppError.offline
         }
         guard let http = response as? HTTPURLResponse else { throw AppError.message("No connection.") }
         if let fields = http.allHeaderFields as? [String: String], let address = request.url {
@@ -220,6 +226,81 @@ final class AppModel: ObservableObject {
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             throw AppError.message(object?["error"] as? String ?? "Something went wrong. Please try again.")
         }
+    }
+
+    // MARK: - Offline copies
+
+    private var offlineDir: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("offline", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func saveCopy(_ name: String, _ data: Data) { try? data.write(to: offlineDir.appendingPathComponent("\(name).json"), options: .atomic) }
+    private func loadCopy(_ name: String) -> Data? { try? Data(contentsOf: offlineDir.appendingPathComponent("\(name).json")) }
+
+    /// Fetches from the server and keeps a copy; offline, returns the saved copy instead.
+    func cachedGet<T: Decodable>(_ path: String, name: String, as type: T.Type) async throws -> T {
+        do {
+            let (data, http) = try await send(path)
+            try check(data, http)
+            let value = try JSONDecoder().decode(T.self, from: data)
+            saveCopy(name, data)
+            offline = false
+            return value
+        } catch AppError.offline {
+            offline = true
+            guard let data = loadCopy(name), let value = try? JSONDecoder().decode(T.self, from: data) else { throw AppError.offline }
+            return value
+        }
+    }
+
+    private func loadPending() {
+        if let data = loadCopy("pending"), let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] { pending = list }
+    }
+
+    private func savePending() {
+        if let data = try? JSONSerialization.data(withJSONObject: pending) { saveCopy("pending", data) }
+    }
+
+    /// Keeps a contact on the phone until it can be sent.
+    func queueContact(_ json: [String: Any]) {
+        var item = json
+        item["localId"] = Int(Date().timeIntervalSince1970 * 1000)
+        pending.append(item)
+        savePending()
+    }
+
+    /// Contacts waiting to be sent, shown in the list until they are.
+    var pendingContacts: [Contact] {
+        pending.compactMap { item in
+            var shown = item
+            shown["id"] = -(item["localId"] as? Int ?? 1)
+            shown["createdAt"] = Double(item["localId"] as? Int ?? 0)
+            guard let data = try? JSONSerialization.data(withJSONObject: shown) else { return nil }
+            return try? JSONDecoder().decode(Contact.self, from: data)
+        }
+    }
+
+    /// Sends contacts saved while offline.
+    func flushPending() async {
+        loadPending()
+        guard !pending.isEmpty else { return }
+        var left: [[String: Any]] = []
+        var sent = 0
+        for item in pending {
+            var body = item
+            body.removeValue(forKey: "localId")
+            do {
+                try await change("/api/contacts", json: body)
+                sent += 1
+            } catch {
+                left.append(item)
+            }
+        }
+        pending = left
+        savePending()
+        if sent > 0 { alert = "\(sent) contact\(sent == 1 ? "" : "s") saved while offline \(sent == 1 ? "was" : "were") uploaded." }
     }
 
     func get<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
@@ -250,19 +331,27 @@ final class AppModel: ObservableObject {
     }
 
     func refresh() async {
+        loadPending()
         do {
             let (data, http) = try await send("/api/me")
             try check(data, http)
             let value = try JSONDecoder().decode(Me.self, from: data)
             me = value
             if let s = value.sso { sso = s }
+            offline = false
             phase = value.user == nil ? .signedOut : .signedIn
-        } catch {
-            // Offline: keep someone who has a session signed in; the pages show their own offline screen.
-            if phase == .loading {
-                let signedIn = await siteCookies().contains { $0.name == "mk_session" }
-                phase = signedIn ? .signedIn : .signedOut
+            if value.user != nil {
+                saveCopy("me", data)
+                await flushPending()
             }
+        } catch {
+            // Offline: someone with a session keeps using the app with the copy saved on the phone.
+            if case AppError.offline = error { offline = true }
+            let signedIn = await siteCookies().contains { $0.name == "mk_session" }
+            if me == nil, signedIn, let data = loadCopy("me"), let saved = try? JSONDecoder().decode(Me.self, from: data), saved.user != nil {
+                me = saved
+            }
+            if phase == .loading { phase = signedIn && me?.user != nil ? .signedIn : .signedOut }
         }
     }
 
@@ -301,6 +390,8 @@ final class AppModel: ObservableObject {
     /// The page signed out (Log out, account deleted, or the session ended).
     func forgetSession() async {
         for cookie in await siteCookies() where cookie.name == "mk_session" { await cookieStore.deleteCookie(cookie) }
+        try? FileManager.default.removeItem(at: offlineDir)
+        pending = []
         me = nil
         phase = .signedOut
         tab = .cards

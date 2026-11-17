@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -36,6 +38,16 @@
                 <data android:scheme="mkcards" android:host="auth" />
             </intent-filter>
         </activity>
+
+        <!-- The card editor and a few tools are MK Cards pages, opened from the native screens. -->
+        <activity
+            android:name=".WebActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Lets Google Play services fetch the scanners when the app is installed. -->
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr,barcode_ui,document_ui" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

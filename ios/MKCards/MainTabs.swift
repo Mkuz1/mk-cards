@@ -7,6 +7,14 @@ struct MainTabs: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
+        VStack(spacing: 0) {
+            if model.offline { OfflineBanner() }
+            tabs
+        }
+        .animation(.easeInOut(duration: 0.2), value: model.offline)
+    }
+
+    private var tabs: some View {
         TabView(selection: $model.tab) {
             CardsView()
                 .tabItem { Label("Cards", systemImage: "rectangle.stack") }
@@ -25,6 +33,26 @@ struct MainTabs: View {
                 .tag(Tab.account)
         }
         .tint(Theme.navy)
+    }
+}
+
+/// Shown while there is no connection: the app keeps working with the copy saved on the phone.
+struct OfflineBanner: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+            Text(model.pending.isEmpty ? "Offline: showing your saved cards and contacts."
+                 : "Offline: \(model.pending.count) contact\(model.pending.count == 1 ? "" : "s") waiting to upload.")
+                .lineLimit(1).minimumScaleFactor(0.8)
+            Spacer()
+            Button("Retry") { Task { await model.refresh() } }.font(.footnote.weight(.semibold))
+        }
+        .font(.footnote)
+        .foregroundStyle(Color(red: 0.42, green: 0.29, blue: 0))
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(Color(red: 1, green: 0.96, blue: 0.84))
     }
 }
 

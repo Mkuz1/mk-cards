@@ -178,7 +178,7 @@ struct CardDetailView: View {
     }
 
     private func loadStats() async {
-        stats = try? await model.get("/api/cards/\(cardId)/stats", as: CardStats.self)
+        stats = try? await model.cachedGet("/api/cards/\(cardId)/stats", name: "stats-\(cardId)", as: CardStats.self)
     }
 
     private func toggle() async {
