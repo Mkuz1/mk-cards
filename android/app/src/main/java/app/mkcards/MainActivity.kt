@@ -51,6 +51,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // The cookie store is shared with the web pages; start it here, on the main thread, before any call uses it.
+        android.webkit.CookieManager.getInstance().setAcceptCookie(true)
         state = AppState(applicationContext)
         setContent { MKTheme { AppRoot(state, this) } }
         updateManager = AppUpdateManagerFactory.create(this)

@@ -71,7 +71,7 @@ import kotlinx.coroutines.launch
 fun AppRoot(state: AppState, activity: MainActivity) {
     when (state.phase) {
         Phase.Loading -> Box(Modifier.fillMaxSize().background(MK.deep), contentAlignment = Alignment.Center) {
-            Image(painterResource(R.mipmap.ic_launcher), null, Modifier.size(96.dp))
+            Image(painterResource(R.drawable.ic_launcher_art), null, Modifier.size(96.dp).clip(RoundedCornerShape(22.dp)))
         }
         Phase.SignedOut -> WelcomeScreen(state, activity)
         Phase.SignedIn -> MainTabs(state, activity)
@@ -89,7 +89,7 @@ fun WelcomeScreen(state: AppState, activity: MainActivity) {
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF1C3866), MK.deep, Color(0xFF07122A)))).padding(pad)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Spacer(Modifier.height(56.dp))
-                Image(painterResource(R.mipmap.ic_launcher), null, Modifier.size(92.dp))
+                Image(painterResource(R.drawable.ic_launcher_art), null, Modifier.size(92.dp).clip(RoundedCornerShape(22.dp)))
                 Text("MK Cards", color = Color.White, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 40.sp, modifier = Modifier.padding(top = 20.dp))
                 Box(Modifier.padding(vertical = 14.dp).width(46.dp).height(2.dp).background(MK.softGold))
                 Text("Your business card, always with you.\nShare it with a QR code, a link, NFC or Google Wallet.",

@@ -15,8 +15,8 @@ android {
         applicationId = project.property("MK_APPLICATION_ID") as String
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "2.0.0"
+        versionCode = 6
+        versionName = "2.0.1"
         buildConfigField("String", "SITE_URL", "\"$siteUrl\"")
         buildConfigField("String", "SITE_HOST", "\"$siteHost\"")
         manifestPlaceholders["siteHost"] = siteHost
@@ -54,6 +54,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        // The launch test runs the app in Robolectric, which downloads Android itself from Maven Central.
+        unitTests.all { it.systemProperty("robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2") }
+    }
 }
 
 dependencies {
@@ -69,6 +74,11 @@ dependencies {
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.webkit:webkit:1.14.0")
