@@ -273,7 +273,7 @@ private fun CardDetail(state: AppState, activity: MainActivity, card: CardEntry,
     var confirm by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(card.id) { stats = state.stats(card.id) }
-    val link = "${Api.site}/${state.me?.user?.username}${if (card.slug.isEmpty()) "" else "/" + card.slug}"
+    val link = "${Api.publicSite}/${state.me?.user?.username}${if (card.slug.isEmpty()) "" else "/" + card.slug}"
     Column {
         Header(card.displayName, back = close)
         Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -294,7 +294,7 @@ private fun CardDetail(state: AppState, activity: MainActivity, card: CardEntry,
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White)) {
                 ActionRow("Edit card") { WebActivity.open(activity, "Edit card", "/edit/${card.id}", listOf("/share/")) }
                 ActionRow("Share and QR code") { state.shareCardId = card.id; state.tab = Tab.Share }
-                ActionRow("Preview card page") { WebActivity.open(activity, card.name, link.removePrefix(Api.site)) }
+                ActionRow("Preview card page") { WebActivity.open(activity, card.name, link.removePrefix(Api.publicSite)) }
                 ActionRow("Email signature") { WebActivity.open(activity, "Email signature", "/signature/${card.id}") }
                 ActionRow("Video-call background") { WebActivity.open(activity, "Call background", "/background/${card.id}") }
             }
@@ -372,7 +372,7 @@ fun ShareScreen(state: AppState, activity: MainActivity) {
             return
         }
         val card = cards.firstOrNull { it.id == state.shareCardId } ?: cards.first()
-        val link = "${Api.site}/${state.me?.user?.username}${if (card.slug.isEmpty()) "" else "/" + card.slug}"
+        val link = "${Api.publicSite}/${state.me?.user?.username}${if (card.slug.isEmpty()) "" else "/" + card.slug}"
         val qr = remember(link) { qrBitmap(link) }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (cards.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

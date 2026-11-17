@@ -85,15 +85,17 @@ object MKIcons {
 /** A big navy button with a gold edge, or a white one. */
 @Composable
 fun MKButton(text: String, modifier: Modifier = Modifier, light: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+    // Buttons that share a row get less padding, and their label stays on one line.
+    val pad = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
     if (light) {
         OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = MK.ink)) {
-            Text(text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = MK.ink), contentPadding = pad) {
+            Text(text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
     } else {
         Button(onClick = onClick, enabled = enabled, modifier = modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MK.navy, contentColor = Color.White)) {
-            Text(text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            colors = ButtonDefaults.buttonColors(containerColor = MK.navy, contentColor = Color.White), contentPadding = pad) {
+            Text(text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
     }
 }

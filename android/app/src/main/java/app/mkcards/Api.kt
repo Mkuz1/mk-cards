@@ -14,7 +14,11 @@ import java.net.URL
  * pages opened in [WebActivity] share one session. Every call runs off the main thread.
  */
 object Api {
-    val site: String = BuildConfig.SITE_URL
+    // The server address. Tests point it at a local stand-in.
+    var site: String = BuildConfig.SITE_URL
+
+    /** The public address of card pages, as printed in links and QR codes. */
+    val publicSite: String = BuildConfig.SITE_URL
 
     class Offline : Exception("You're offline. Check your connection and try again.")
     class Failed(val status: Int, message: String) : Exception(message)
