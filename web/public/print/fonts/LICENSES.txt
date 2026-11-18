@@ -1,0 +1,2 @@
+Inter, Noto Serif, Noto Kufi Arabic and Noto Naskh Arabic are licensed under the SIL Open Font License 1.1 (https://openfontlicense.org).
+HarfBuzz (harfbuzzjs) is licensed under the Old MIT licence (see hb/LICENSE.txt).

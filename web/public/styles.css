@@ -522,3 +522,45 @@ body.card-page .vc-report a { color: rgba(255, 255, 255, 0.45); }
 .print-preview img { width: 100%; height: 100%; object-fit: contain; display: block; box-shadow: 0 10px 24px -14px rgba(13, 27, 51, 0.5); }
 .help-panel summary { cursor: pointer; }
 .help-panel ol, .help-panel ul { margin: 6px 0 0 18px; padding: 0; display: grid; gap: 6px; }
+
+/* ---------- printed card designer ---------- */
+.notice { padding: 10px 14px; border-radius: 12px; background: #fff7e0; border: 1px solid #f1dfa6; color: #6b4b00; }
+.grid3, .grid4 { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grid2 .field, .grid3 .field, .grid4 .field { min-width: 0; }
+.dz { display: grid; gap: 16px; }
+@media (min-width: 980px) { .dz { grid-template-columns: minmax(0, 1fr) 380px; align-items: start; } .dz-side { position: sticky; top: 90px; max-height: calc(100vh - 110px); overflow: auto; } }
+.dz-stage-wrap { padding: 18px; border-radius: 16px; background: repeating-conic-gradient(#e9edf4 0 25%, #f6f8fb 0 50%) 0 0 / 18px 18px; }
+.dz-stage { position: relative; width: 100%; background: #fff; box-shadow: 0 16px 40px -18px rgba(13, 27, 51, 0.45); touch-action: none; outline: none; user-select: none; }
+.dz-stage img { position: absolute; display: block; pointer-events: none; }
+.dz-text-img { inset: 0; width: 100%; height: 100%; }
+.dz-handles { position: absolute; inset: 0; }
+.dz-h { position: absolute; border: 1px dashed rgba(62, 123, 250, 0.55); cursor: move; border-radius: 2px; }
+.dz-h:hover { background: rgba(62, 123, 250, 0.06); }
+.dz-h.on { border: 1.5px solid #3e7bfa; background: rgba(62, 123, 250, 0.08); }
+.dz-h.empty { border-color: rgba(176, 137, 47, 0.7); }
+.dz-ph { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); font-size: 10px; color: #8a6100; white-space: nowrap; pointer-events: none; }
+.dz-grip { position: absolute; right: -5px; bottom: -5px; width: 10px; height: 10px; border-radius: 3px; background: #3e7bfa; cursor: nwse-resize; display: none; }
+.dz-h.on .dz-grip { display: block; }
+.dz-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.dz-legend .lg { display: inline-block; width: 18px; height: 0; border-top: 2px dashed; vertical-align: middle; }
+.dz-legend .lg.trim { border-color: #e5484d; }
+.dz-legend .lg.safe { border-color: #3e7bfa; }
+.dz-legend .lg.bleed { border-color: #c7cdd8; border-top-style: solid; }
+.dz-li { display: grid; text-align: left; gap: 2px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--hairline); background: #fff; cursor: pointer; }
+.dz-li:hover { border-color: var(--accent); }
+.dz-line { gap: 6px; }
+.dz-prefix { width: 86px; flex: none; }
+.dz-color { padding: 4px; height: 44px; }
+.dz-file { gap: 8px; padding: 8px 0; border-top: 1px solid var(--hairline); }
+.dz-who { max-width: 280px; }
+.pulse { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(29, 61, 112, 0.18); } }
+.pp-pair { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+.pp-pair figure { margin: 0; }
+.pp-pair img { width: 100%; display: block; background: #fff; border-radius: 6px; box-shadow: 0 8px 22px -12px rgba(13, 27, 51, 0.45); }
+.pp-pair figcaption { text-align: center; font-size: 13px; color: var(--ink-2); margin-top: 6px; }
+.print-row { gap: 12px; padding: 10px 0; border-top: 1px solid var(--hairline); }
+.print-row input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
+.bg-colours .swatch { border: 2px solid rgba(13, 27, 51, 0.15); }
+.sheet .pp-pair { margin: 4px 0; }

@@ -8,8 +8,7 @@ import { decrypt, encrypt, randomToken, readSigned, sha256b64url, signValue } fr
 import { SSO_PROVIDERS, authorizeUrl, finishSignIn, ssoStatus, verifyAppleSignIn } from './sso.js';
 import { salesforceAuthorizeUrl, salesforceExchange, salesforceHost, salesforcePushLead, salesforceRefresh, salesforceRevoke, salesforceWho } from './crm.js';
 import { readBusinessCard } from './scan.js';
-import { fillDesign, printFields, sampleDesign, sanitizeSvg } from './print.js';
-import { zip } from './zip.js';
+import { sanitizeSvg } from './print.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -169,7 +168,7 @@ export default {
 // Browser protections: no other site may frame these pages, and pages only run this site's own scripts.
 const SECURITY_HEADERS = {
   'content-security-policy': [
-    "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:",
+    "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:",
     "connect-src 'self'", "font-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'self'",
     "frame-ancestors 'none'", "manifest-src 'self'", "worker-src 'self'",
   ].join('; '),
@@ -288,13 +287,14 @@ async function api(request, env, url) {
   if (path === '/org/import' && method === 'POST') return importMembers(request, env, url);
   if (path === '/org/logo' && method === 'PUT') return setOrgLogo(request, env);
   if (path === '/org/members.csv' && method === 'GET') return membersCsv(request, env, url);
-  if (path === '/org/design' && method === 'PUT') return uploadDesign(request, env);
-  if (path === '/org/print.zip' && method === 'GET') return printAll(request, env, url);
-  let design = /^\/org\/design\/(front|back)(\.svg)?$/.exec(path);
-  if (design && method === 'GET') return downloadDesign(request, env, url, design[1]);
-  if (design && method === 'DELETE') return removeDesign(request, env, design[1]);
-  design = /^\/org\/print\/([a-z0-9]{6,20})\/(front|back)\.svg$/.exec(path);
-  if (design && method === 'GET') return printCard(request, env, url, design[1], design[2]);
+  if (path === '/print' && method === 'GET') return printData(request, env, url);
+  if (path === '/print/layout' && method === 'PUT') return saveLayout(request, env);
+  const printFile = /^\/print\/(art|font)\/(front|back|regular|bold)$/.exec(path);
+  if (printFile && (printFile[1] === 'art') === ['front', 'back'].includes(printFile[2])) {
+    if (method === 'GET') return getPrintFile(request, env, printFile[2]);
+    if (method === 'PUT') return uploadPrintFile(request, env, printFile[2]);
+    if (method === 'DELETE') return removePrintFile(request, env, printFile[2]);
+  }
   if (path === '/org/activity.csv' && method === 'GET') return activityCsv(request, env, url, true);
 
   if (path === '/me' && method === 'GET') return me(request, env);
@@ -839,19 +839,22 @@ async function orgOverview(request, env) {
     org: { id: org.id, name: org.name, plan: org.plan, settings: cleanOrgSettings(JSON.parse(org.data || '{}')), defaultMessage: DEFAULT_LEFT_MESSAGE },
     members: await orgMembers(env, user.org_id),
     sso: await orgSso(env, user.org_id),
-    design: await designStatus(env, user.org_id),
+    print: Boolean((JSON.parse(org.data || '{}').print || {}).layout),
     me: user.id,
   });
 }
 
 // Every person's cards with all their details and ready-made links, for administrators. Temporary passwords
 // appear only until the person has chosen their own.
+// The video-call background colours offered on the background page (see BACKGROUNDS in public/app.js).
+const BACKGROUND_COLOURS = ['navy', 'company', 'black', 'emerald', 'burgundy', 'sand', 'white'];
+
 const EXPORT_HEAD = [
   'email', 'username', 'temporary_password', 'role', 'status', 'name', 'title', 'department', 'company', 'card_label',
   'mobile', 'office', 'whatsapp', 'whatsapp_message', 'card_email', 'website', 'linkedin', 'address', 'bio',
   'name_ar', 'title_ar', 'department_ar', 'company_ar', 'address_ar', 'bio_ar',
-  'card_link', 'save_contact_link', 'qr_code_png', 'email_signature_link', 'zoom_background_link',
-  'print_front_svg', 'print_back_svg', 'views', 'contact_saves', 'last_login',
+  'card_link', 'save_contact_link', 'qr_code_png', 'email_signature_link', 'video_call_background_link',
+  ...BACKGROUND_COLOURS.map((c) => `video_call_background_${c}`), 'views', 'contact_saves', 'last_login',
 ];
 
 async function membersCsv(request, env, url) {
@@ -881,119 +884,171 @@ async function membersCsv(request, env, url) {
       ar.name, ar.title, ar.department, ar.company, ar.address, ar.bio,
       r.id ? link : '', r.id ? `${url.origin}/api/public/vcard?${q}` : '', r.id ? `${url.origin}/api/public/qr.png?${q}` : '',
       r.id ? `${url.origin}/tools/signature?${q}` : '', r.id ? `${url.origin}/tools/background?${q}` : '',
-      r.id ? `${url.origin}/api/org/print/${r.id}/front.svg` : '', r.id ? `${url.origin}/api/org/print/${r.id}/back.svg` : '',
+      ...BACKGROUND_COLOURS.map((c) => (r.id ? `${url.origin}/tools/background?${q}&colour=${c}` : '')),
       r.views || 0, r.saves || 0, r.last_login ? new Date(r.last_login).toISOString().slice(0, 10) : '',
     ]);
   }
   return csvResponse(csv(rows), 'mkcards-staff-cards.csv');
 }
 
-// ---------- print card designs (company workspaces) ----------
+// ---------- printed business cards (one fixed design per company) ----------
+// The layout (card size, bleed, and the fields placed on each side) lives in the company's settings; the front and
+// back artwork and up to two brand fonts are stored as files. Cards are drawn in the browser (public/print-engine.js),
+// which turns all text into outlines, so the printer needs no fonts.
 
-const DESIGN_KINDS = { front: 'design-front', back: 'design-back' };
+const PRINT_FILES = { front: 'print-art-front', back: 'print-art-back', regular: 'print-font-regular', bold: 'print-font-bold' };
+const ART_TYPES = ['image/svg+xml', 'image/png', 'image/jpeg'];
+const FONT_MAX = 1_500_000;
+const ART_MAX = 2_000_000;
 
-async function orgLogoDataUri(env, orgId) {
-  const org = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(orgId).first();
-  const logoPath = org && JSON.parse(org.data || '{}').logo;
-  const logo = logoPath && await mediaBytes(env, logoPath);
-  return logo ? `data:${logo.type};base64,${bytesToBase64(logo.bytes)}` : '';
+async function orgPrintSettings(env, orgId) {
+  const org = await env.DB.prepare('SELECT id, name, data FROM orgs WHERE id = ?').bind(orgId).first();
+  const data = JSON.parse(org.data || '{}');
+  return { org, data, print: data.print || {} };
 }
 
-/** The company's design for one side, or MK Cards' own design until one is uploaded. */
-async function designFor(env, orgId, side) {
-  const row = await env.DB.prepare('SELECT data FROM media WHERE card_id = ? AND kind = ?').bind(`org:${orgId}`, DESIGN_KINDS[side]).first();
-  if (row) return { svg: new TextDecoder().decode(new Uint8Array(row.data)), custom: true };
-  const org = await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(orgId).first();
-  const accent = cleanOrgSettings(JSON.parse((org && org.data) || '{}')).accent;
-  return { svg: sampleDesign(side, { accent, logo: await orgLogoDataUri(env, orgId) }), custom: false };
-}
-
-async function designStatus(env, orgId) {
-  const { results } = await env.DB.prepare('SELECT kind, created_at FROM media WHERE card_id = ? AND kind IN (?, ?)')
-    .bind(`org:${orgId}`, DESIGN_KINDS.front, DESIGN_KINDS.back).all();
-  const at = (kind) => (results.find((r) => r.kind === kind) || {}).created_at || 0;
-  return { front: at(DESIGN_KINDS.front), back: at(DESIGN_KINDS.back) };
-}
-
-async function uploadDesign(request, env) {
+// Who may read the design: the company's administrators always; everyone in the company when staff downloads are on.
+async function printAccess(request, env, needAdmin = false) {
   const user = await requireUser(request, env);
-  requireAdminRole(user);
-  const body = await readJson(request, 3_000_000);
-  const side = body.side === 'back' ? 'back' : body.side === 'front' ? 'front' : null;
-  if (!side) throw new HttpError(400, 'Choose the front or the back.');
-  let svg;
-  try { svg = sanitizeSvg(body.svg); } catch (err) { throw new HttpError(400, err.message); }
-  const bytes = new TextEncoder().encode(svg);
-  if (bytes.length > 2_500_000) throw new HttpError(413, 'That design is too large (2.5 MB at most). Embed smaller images.');
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM media WHERE card_id = ? AND kind = ?').bind(`org:${user.org_id}`, DESIGN_KINDS[side]),
-    env.DB.prepare('INSERT INTO media (id, user_id, card_id, kind, type, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(randomId(16), user.id, `org:${user.org_id}`, DESIGN_KINDS[side], 'image/svg+xml', bytes.buffer, Date.now()),
-  ]);
-  const placeholders = [...new Set((svg.match(/\{\{\s*([a-z_]+)\s*\}\}/gi) || []).map((p) => p.replace(/[{}\s]/g, '').toLowerCase()))];
-  return json({ ok: true, design: await designStatus(env, user.org_id), placeholders, hasQr: /\bid\s*=\s*("|')qr\1/i.test(svg) });
+  if (!user.org_id) throw new HttpError(403, 'Printed cards are part of company workspaces.');
+  const admin = user.role === 'admin' || user.role === 'owner';
+  const { org, data, print } = await orgPrintSettings(env, user.org_id);
+  if (needAdmin && !admin) throw new HttpError(403, 'Only company administrators can change the card design.');
+  if (!admin && !print.allowStaff) throw new HttpError(403, 'Your company has not turned on print card downloads.');
+  return { user, admin, org, data, print };
 }
 
-async function removeDesign(request, env, side) {
-  const user = await requireUser(request, env);
-  requireAdminRole(user);
-  await env.DB.prepare('DELETE FROM media WHERE card_id = ? AND kind = ?').bind(`org:${user.org_id}`, DESIGN_KINDS[side]).run();
-  return json({ ok: true, design: await designStatus(env, user.org_id) });
-}
+const fileMeta = (print, key) => (print.files && print.files[key]) || null;
 
-const svgResponse = (svg, filename) => new Response(svg, {
-  headers: {
-    'content-type': 'image/svg+xml; charset=utf-8', 'content-disposition': `attachment; filename="${filename}"`, 'cache-control': 'private, no-store',
-    // Opened directly, the drawing can show pictures but never run anything.
-    'content-security-policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:",
-  },
-});
+const LIMITS = { x: [-10, 230], y: [-10, 230], w: [0.5, 230], h: [0.5, 230], size: [3, 72], spacing: [-0.1, 0.6], lineHeight: [0.8, 3], radius: [0, 50] };
+const clamp = (v, [lo, hi], d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
+const PRINT_FIELD_KEYS = new Set(['static', 'name', 'title', 'department', 'company', 'name_ar', 'title_ar', 'department_ar', 'company_ar',
+  'mobile', 'office', 'phone1', 'phone2', 'whatsapp', 'email', 'email2', 'website', 'address', 'address_ar', 'linkedin', 'card_url']);
+const colour = (v, d) => (/^#[0-9a-f]{6}$/i.test(v || '') ? v : d);
+// Prefixes such as "M  " keep their spaces (text() would trim them).
+const prefixText = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, '').slice(0, 24) : '');
 
-/** The design as it is (or MK Cards' starting design), for a designer to edit. */
-async function downloadDesign(request, env, url, side) {
-  const user = await requireUser(request, env);
-  requireAdminRole(user);
-  const { svg } = url.searchParams.has('sample')
-    ? { svg: sampleDesign(side, { accent: cleanOrgSettings(JSON.parse((await env.DB.prepare('SELECT data FROM orgs WHERE id = ?').bind(user.org_id).first()).data || '{}')).accent, logo: await orgLogoDataUri(env, user.org_id) }) }
-    : await designFor(env, user.org_id, side);
-  return svgResponse(svg, `mkcards-template-${side}.svg`);
-}
-
-async function printableCard(env, url, cardRow, design) {
-  const card = readCard(cardRow.data);
-  const link = `${url.origin}/${cardRow.username}${cardRow.slug ? '/' + cardRow.slug : ''}`;
-  return fillDesign(design, printFields(card, { link, username: cardRow.username }), link);
-}
-
-/** One person's card, filled in, ready for print. */
-async function printCard(request, env, url, cardId, side) {
-  const user = await requireUser(request, env);
-  requireAdminRole(user);
-  const row = await env.DB.prepare('SELECT c.data, c.slug, u.username FROM cards c JOIN users u ON u.id = c.user_id WHERE c.id = ? AND u.org_id = ?')
-    .bind(cardId, user.org_id).first();
-  if (!row) throw new HttpError(404, 'Card not found.');
-  const { svg } = await designFor(env, user.org_id, side);
-  return svgResponse(await printableCard(env, url, row, svg), `${row.username}${row.slug ? '-' + row.slug : ''}-${side}.svg`);
-}
-
-/** Every active person's main card, front and back, in one ZIP for the printer. */
-async function printAll(request, env, url) {
-  const user = await requireUser(request, env);
-  requireAdminRole(user);
-  const { results } = await env.DB.prepare(
-    "SELECT c.data, c.slug, u.username FROM cards c JOIN users u ON u.id = c.user_id WHERE u.org_id = ? AND u.active = 1 AND c.active = 1 AND c.slug = '' ORDER BY u.username",
-  ).bind(user.org_id).all();
-  if (!results.length) throw new HttpError(404, 'No active cards to print.');
-  const [front, back] = [await designFor(env, user.org_id, 'front'), await designFor(env, user.org_id, 'back')];
-  const enc = new TextEncoder();
-  const files = {};
-  for (const row of results) {
-    files[`front/${row.username}-front.svg`] = enc.encode(await printableCard(env, url, row, front.svg));
-    files[`back/${row.username}-back.svg`] = enc.encode(await printableCard(env, url, row, back.svg));
+function cleanLayout(input) {
+  if (!input || typeof input !== 'object') throw new HttpError(400, 'Missing layout.');
+  const size = { w: clamp(input.size && input.size.w, [30, 220], 85), h: clamp(input.size && input.size.h, [30, 220], 55) };
+  const elements = [];
+  for (const e of (Array.isArray(input.elements) ? input.elements : []).slice(0, 60)) {
+    if (!e || !['text', 'lines', 'qr', 'logo', 'photo', 'rect'].includes(e.type)) continue;
+    const out = {
+      id: text(e.id, 20) || randomId(8), side: e.side === 'back' ? 'back' : 'front', type: e.type,
+      x: clamp(e.x, LIMITS.x, 8), y: clamp(e.y, LIMITS.y, 8), w: clamp(e.w, LIMITS.w, 20), h: clamp(e.h, LIMITS.h, 5),
+    };
+    if (e.type === 'text' || e.type === 'lines') {
+      Object.assign(out, {
+        font: ['sans', 'serif', 'brand'].includes(e.font) ? e.font : 'sans', weight: e.weight >= 600 ? 700 : 400,
+        size: clamp(e.size, LIMITS.size, 8), color: colour(e.color, '#1f2328'), align: ['left', 'center', 'right'].includes(e.align) ? e.align : 'left',
+        spacing: clamp(e.spacing, LIMITS.spacing, 0), upper: Boolean(e.upper), fit: e.fit !== false,
+      });
+      if (e.type === 'text') {
+        out.field = PRINT_FIELD_KEYS.has(e.field) ? e.field : 'name';
+        out.text = text(e.text, 200);
+        out.prefix = prefixText(e.prefix);
+      } else {
+        out.lineHeight = clamp(e.lineHeight, LIMITS.lineHeight, 1.4);
+        out.lines = (Array.isArray(e.lines) ? e.lines : []).slice(0, 10).map((l) => ({
+          field: PRINT_FIELD_KEYS.has(l && l.field) ? l.field : 'mobile', prefix: prefixText(l && l.prefix), text: text(l && l.text, 200),
+        }));
+      }
+    } else if (e.type === 'qr') {
+      Object.assign(out, { h: out.w, color: colour(e.color, '#000000'), target: e.target === 'vcard' ? 'vcard' : 'card' });
+    } else if (e.type === 'photo') {
+      out.shape = e.shape === 'square' ? 'square' : 'circle';
+    } else if (e.type === 'rect') {
+      Object.assign(out, { color: colour(e.color, '#13315c'), radius: clamp(e.radius, LIMITS.radius, 0) });
+    }
+    elements.push(out);
   }
-  return new Response(zip(files), {
-    headers: { 'content-type': 'application/zip', 'content-disposition': 'attachment; filename="mkcards-print-cards.zip"', 'cache-control': 'private, no-store' },
+  return { size, bleed: clamp(input.bleed, [0, 6], 3), elements };
+}
+
+/** Everything the design and print pages need: layout, file details, the company, and its people's cards. */
+async function printData(request, env, url) {
+  const { user, admin, org, data, print } = await printAccess(request, env);
+  const { results } = await env.DB.prepare(
+    `SELECT u.id AS user_id, u.username, u.email, c.id, c.slug, c.data, c.active FROM users u JOIN cards c ON c.user_id = u.id
+     WHERE u.org_id = ? AND u.active = 1 ${admin ? '' : 'AND u.id = ?'} ORDER BY u.created_at, c.slug = '' DESC, c.created_at`,
+  ).bind(...(admin ? [user.org_id] : [user.org_id, user.id])).all();
+  const staff = [];
+  for (const r of results) {
+    let person = staff.find((p) => p.id === r.user_id);
+    if (!person) staff.push(person = { id: r.user_id, username: r.username, email: r.email, name: '', cards: [] });
+    const card = readCard(r.data);
+    if (!person.name || r.slug === '') person.name = card.name;
+    person.cards.push({ id: r.id, slug: r.slug, label: card.label || (r.slug ? r.slug : 'Main card'), active: r.active !== 0, card,
+      link: `${url.origin}/${r.username}${r.slug ? '/' + r.slug : ''}`,
+      vcardLink: `${url.origin}/api/public/vcard?u=${encodeURIComponent(r.username)}&s=${encodeURIComponent(r.slug)}` });
+  }
+  return json({
+    admin, org: { name: org.name, logo: data.logo || '' },
+    layout: print.layout || null, allowStaff: Boolean(print.allowStaff),
+    files: { front: fileMeta(print, 'front'), back: fileMeta(print, 'back'), regular: fileMeta(print, 'regular'), bold: fileMeta(print, 'bold') },
+    staff,
   });
+}
+
+async function saveLayout(request, env) {
+  const { user, data, print } = await printAccess(request, env, true);
+  const body = await readJson(request, 200_000);
+  const layout = cleanLayout(body.layout);
+  data.print = { ...print, layout, allowStaff: Boolean(body.allowStaff) };
+  await env.DB.prepare('UPDATE orgs SET data = ? WHERE id = ?').bind(JSON.stringify(data), user.org_id).run();
+  return json({ ok: true, layout, allowStaff: data.print.allowStaff });
+}
+
+/** Artwork (front/back) or a brand font (regular/bold). */
+async function uploadPrintFile(request, env, key) {
+  const { user, data, print } = await printAccess(request, env, true);
+  const body = await readJson(request, 3_000_000);
+  const m = /^data:([a-z+/.-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(String(body.data || ''));
+  if (!m) throw new HttpError(400, 'That file could not be read.');
+  let type = m[1].toLowerCase();
+  let bytes = base64ToBytes(m[2]);
+  const name = text(body.name, 120) || key;
+  if (key === 'regular' || key === 'bold') {
+    const sig = String.fromCharCode(...bytes.slice(0, 4));
+    if (!['\0\x01\0\0', 'OTTO', 'true'].includes(sig)) throw new HttpError(400, 'Use a .ttf or .otf font file.');
+    if (bytes.length > FONT_MAX) throw new HttpError(413, 'That font file is too large (1.5 MB at most).');
+    type = sig === 'OTTO' ? 'font/otf' : 'font/ttf';
+  } else {
+    if (!ART_TYPES.includes(type)) throw new HttpError(400, 'Use an SVG, PNG or JPG file.');
+    if (type === 'image/svg+xml') {
+      try { bytes = new TextEncoder().encode(sanitizeSvg(new TextDecoder().decode(bytes))); } catch (err) { throw new HttpError(400, err.message); }
+    }
+    if (bytes.length > ART_MAX) throw new HttpError(413, 'That artwork is too large (2 MB at most). Save pictures as JPG at 300 dpi, or compress the images inside the SVG.');
+  }
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM media WHERE card_id = ? AND kind = ?').bind(`org:${user.org_id}`, PRINT_FILES[key]),
+    env.DB.prepare('INSERT INTO media (id, user_id, card_id, kind, type, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(randomId(16), user.id, `org:${user.org_id}`, PRINT_FILES[key], type, bytes.buffer, Date.now()),
+  ]);
+  data.print = { ...print, files: { ...(print.files || {}), [key]: { name, type, bytes: bytes.length, v: Date.now() } } };
+  await env.DB.prepare('UPDATE orgs SET data = ? WHERE id = ?').bind(JSON.stringify(data), user.org_id).run();
+  return json({ ok: true, files: data.print.files });
+}
+
+async function removePrintFile(request, env, key) {
+  const { user, data, print } = await printAccess(request, env, true);
+  await env.DB.prepare('DELETE FROM media WHERE card_id = ? AND kind = ?').bind(`org:${user.org_id}`, PRINT_FILES[key]).run();
+  const files = { ...(print.files || {}) };
+  delete files[key];
+  data.print = { ...print, files };
+  await env.DB.prepare('UPDATE orgs SET data = ? WHERE id = ?').bind(JSON.stringify(data), user.org_id).run();
+  return json({ ok: true, files });
+}
+
+async function getPrintFile(request, env, key) {
+  const { user } = await printAccess(request, env);
+  const row = await env.DB.prepare('SELECT type, data FROM media WHERE card_id = ? AND kind = ?').bind(`org:${user.org_id}`, PRINT_FILES[key]).first();
+  if (!row) throw new HttpError(404, 'Not uploaded.');
+  return new Response(row.data, { headers: {
+    'content-type': row.type, 'cache-control': 'private, max-age=60',
+    'content-security-policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:",
+  } });
 }
 
 // A small CSV reader (quoted fields, commas and new lines inside quotes).

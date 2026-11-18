@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCallBackground, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.4.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.5.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -733,6 +733,7 @@ function cardMenu(entry) {
       h('a', { class: 'btn grow', href: `/background/${entry.id}`, onclick: close }, icon('monitor'), 'Call background')),
     h('div', { class: 'row' }, qrDownloadButton(entry, 'png', 'QR as PNG', 'btn grow'), qrDownloadButton(entry, 'svg', 'QR as SVG', 'btn grow')),
     walletButtons(entry),
+    me.user.org && h('button', { class: 'btn block', onclick: () => { close(); myPrintCard(entry); } }, icon('download'), 'Print card (SVG)'),
     h('button', { class: 'btn block', onclick: () => { close(); cardStatusSheet(entry); } }, icon('power'), entry.active ? 'Turn this card off' : 'Turn this card back on'),
     h('button', { class: 'btn block', onclick: close }, 'Close'),
   ].filter(Boolean));
@@ -1452,7 +1453,7 @@ function adminScreen() {
           h('a', { class: 'btn small', href: '/api/org/activity.csv', download: 'mkcards-company-activity.csv' }, icon('chart'), 'Activity CSV')),
         search, list),
       importHelpPanel(),
-      printDesignPanel(data.design, members),
+      printPanel(data.print),
       h('div', { class: 'two-col' }, companySignInPanel(data.sso, load), crmPanel('admin')));
     drawList();
   };
@@ -1471,8 +1472,6 @@ function memberRow(m, info, reload, myId) {
       h('span', { class: 'grow' }, h('strong', {}, c.label || (c.slug === '' ? 'Main card' : c.slug)), ' ',
         h('a', { href: `/${m.username}${c.slug ? '/' + c.slug : ''}`, target: '_blank', rel: 'noopener', class: 'small' }, `${location.host}/${m.username}${c.slug ? '/' + c.slug : ''}`),
         h('span', { class: 'small muted' }, ` · ${plural(c.views, 'view')} · ${plural(c.saves, 'save')}`)),
-      h('a', { class: 'btn small', href: `/api/org/print/${c.id}/front.svg`, download: `${m.username}-front.svg`, title: 'Print card, front (SVG)' }, icon('download'), 'Front'),
-      h('a', { class: 'btn small', href: `/api/org/print/${c.id}/back.svg`, download: `${m.username}-back.svg`, title: 'Print card, back (SVG)' }, icon('download'), 'Back'),
       h('button', { class: `btn small${c.active ? '' : ' primary'}`, onclick: () => call(`/cards/${c.id}/status`, { active: !c.active }) },
         icon('power'), c.active ? 'Turn off' : 'Turn on'))));
   return h('div', { class: `member${m.active ? '' : ' off'}` },
@@ -1646,60 +1645,15 @@ function importHelpPanel() {
     h('p', { class: 'small muted' }, 'Export staff cards gives every card with all details and links: card page, save-contact file, QR code, email signature, Zoom background and the print files.'));
 }
 
-const PLACEHOLDER_LIST = ['name', 'title', 'department', 'company', 'mobile', 'office', 'phone', 'whatsapp', 'email', 'website', 'address', 'linkedin', 'link', 'username', 'initials', 'name_ar', 'title_ar', 'department_ar', 'company_ar', 'address_ar'];
-
-// The company's print design: a front and back (SVG) filled in for each person, ready for the printer.
-function printDesignPanel(design, members) {
-  const panel = h('section', { class: 'glass panel stack' });
-  const mine = members.find((m) => m.cards.length) || null;
-  const sample = mine && (mine.cards.find((c) => c.slug === '') || mine.cards[0]);
-  const status = { ...(design || {}) };
-  const preview = (side) => {
-    const box = h('div', { class: 'print-preview' }, h('span', { class: 'muted small' }, 'Loading…'));
-    if (!sample) { box.replaceChildren(h('span', { class: 'muted small' }, 'Add a person with a card to preview.')); return box; }
-    fetch(`/api/org/print/${sample.id}/${side}.svg?v=${status[side] || 0}`, { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error())))
-      .then((blob) => box.replaceChildren(h('img', { src: URL.createObjectURL(blob), alt: `${side} of ${sample.name || 'the card'}` })))
-      .catch(() => box.replaceChildren(h('span', { class: 'error small' }, 'Preview not available.')));
-    return box;
-  };
-  const upload = (side) => h('input', { type: 'file', accept: '.svg,image/svg+xml', hidden: true, onchange: async (e) => {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    try {
-      const res = await api('/org/design', { method: 'PUT', body: { side, svg: await file.text() } });
-      Object.assign(status, res.design);
-      const unknown = res.placeholders.filter((p) => !PLACEHOLDER_LIST.includes(p) && p !== 'website_url' && p !== 'card_url');
-      toast(`${side === 'front' ? 'Front' : 'Back'} uploaded. ${res.placeholders.length} field${res.placeholders.length === 1 ? '' : 's'} found${res.hasQr ? ' and a QR code area' : ''}.`
-        + (unknown.length ? ` Not recognised: ${unknown.join(', ')}.` : ''));
-      draw();
-    } catch (err) { toast(err.message); }
-  } });
-  const side = (name) => {
-    const input = upload(name);
-    return h('div', { class: 'stack print-side' },
-      h('div', { class: 'row' }, h('strong', { class: 'grow' }, name === 'front' ? 'Front' : 'Back'),
-        h('span', { class: `pill${status[name] ? ' ok' : ''}` }, status[name] ? 'Your design' : 'MK Cards design')),
-      preview(name),
-      h('div', { class: 'row wrap' },
-        h('button', { class: 'btn small primary', onclick: () => input.click() }, icon('upload'), 'Upload SVG'), input,
-        h('a', { class: 'btn small', href: `/api/org/design/${name}.svg`, download: `template-${name}.svg` }, icon('download'), 'Template'),
-        status[name] ? h('button', { class: 'btn small danger', onclick: async () => {
-          try { Object.assign(status, (await api(`/org/design/${name}`, { method: 'DELETE' })).design); draw(); } catch (err) { toast(err.message); }
-        } }, 'Remove') : null));
-  };
-  const draw = () => panel.replaceChildren(
+// The company's printed card: a link to the design editor and the print page.
+function printPanel(hasDesign) {
+  return h('section', { class: 'glass panel stack' },
     h('div', { class: 'row wrap' }, h('span', { class: 'panel-icon' }, icon('cards')), h('h2', { class: 'grow' }, 'Printed business cards'),
-      h('a', { class: 'btn primary', href: '/api/org/print.zip', download: 'mkcards-print-cards.zip' }, icon('download'), 'Download all cards (SVG, ZIP)')),
-    h('p', { class: 'muted small' }, 'Upload your company\'s card design once (front and back, as SVG). MK Cards fills in each person\'s details and their own QR code, ready for the printer: 85 × 55 mm with 3 mm bleed in the starting template.'),
-    h('div', { class: 'two-col' }, side('front'), side('back')),
-    h('details', { class: 'how' }, h('summary', {}, 'How to prepare a design'),
-      h('p', { class: 'small muted' }, 'Start from the Template (it is your current design, or MK Cards\' design with your colour and logo). In Illustrator, Figma, Affinity or Inkscape, type the fields where they belong, in double braces, and keep text as text (not outlines). Embed images. Export as SVG.'),
-      h('p', { class: 'small' }, PLACEHOLDER_LIST.map((p) => `{{${p}}}`).join('  ')),
-      h('p', { class: 'small muted' }, 'For the QR code, draw a square and give it the id "qr" (in Illustrator: the layer name; in Figma: the layer name). Optional: data-color="#0f2343" sets its colour.')));
-  draw();
-  return panel;
+      h('span', { class: `pill${hasDesign ? ' ok' : ''}` }, hasDesign ? 'Design ready' : 'No design yet')),
+    h('p', { class: 'muted small' }, 'One fixed design for everyone in the company. Upload the front and back artwork and your brand fonts, place the fields, and download print-ready SVG cards for everyone.'),
+    h('div', { class: 'row wrap' },
+      h('a', { class: 'btn primary', href: '/admin/design' }, icon('edit'), hasDesign ? 'Edit card design' : 'Create card design'),
+      h('a', { class: 'btn', href: '/admin/print' }, icon('download'), 'Print cards')));
 }
 
 // ---------- first sign-in for invited people ----------
@@ -2356,17 +2310,27 @@ function saveBlob(blob, filename) {
 
 // ---------- video-call background ----------
 
+// Video-call background colours: [key, name, card colour ('mono' for black, '' for the card's own), light paper].
+const BACKGROUNDS = [
+  ['navy', 'Midnight navy', '#2a5ba8', ''], ['company', 'Card colour', '', ''], ['black', 'Black', 'mono', ''],
+  ['emerald', 'Emerald', '#1fa97a', ''], ['burgundy', 'Burgundy', '#b8344f', ''], ['sand', 'Sand', '#a8862e', '#f3ead8'], ['white', 'White', '#2a5ba8', '#ffffff'],
+];
+
 function backgroundScreen(id) {
   const entry = typeof id === 'object' ? id : toolSubject(findCard(id));
   if (!entry) return missingScreen('That card is not in your account.');
   const card = entry.card;
-  const opts = { theme: 'dark', side: 'left', qr: true, details: true, logo: Boolean(card.logo || entry.orgLogo) };
+  const wanted = new URLSearchParams(location.search).get('colour');
+  const opts = { colour: BACKGROUNDS.some(([k]) => k === wanted) ? wanted : 'navy', side: 'left', qr: true, details: true, logo: Boolean(card.logo || entry.orgLogo) };
   const holder = h('div', { class: 'bg-preview' });
   let canvas = null;
   let logoImg = null;
   const draw = async () => {
     if (opts.logo && !logoImg) logoImg = await loadImage(card.logo || entry.orgLogo).catch(() => null);
-    canvas = await drawCallBackground(card, entry.link, { theme: opts.theme, side: opts.side, details: opts.details,
+    const [, , accent, paper] = BACKGROUNDS.find(([k]) => k === opts.colour);
+    const look = paper ? { theme: 'light', paper } : { theme: 'dark' };
+    const shown = accent === 'mono' ? { ...card, style: 'mono' } : accent ? { ...card, accent, style: 'aurora' } : card;
+    canvas = await drawCallBackground(shown, entry.link, { ...look, side: opts.side, details: opts.details,
       qr: opts.qr ? qrMatrix(entry.link) : null, logo: opts.logo ? logoImg : null });
     canvas.setAttribute('aria-label', 'Background preview');
     holder.replaceChildren(canvas);
@@ -2387,9 +2351,14 @@ function backgroundScreen(id) {
     topbar('Video-call background', '/'),
     h('section', { class: 'glass panel stack' },
       holder,
-      h('div', { class: 'row wrap' }, seg('Theme', 'theme', [['dark', 'Dark'], ['light', 'Light']]), seg('Name on the', 'side', [['left', 'Left'], ['right', 'Right']])),
+      h('div', { class: 'swatches bg-colours', role: 'group', 'aria-label': 'Colour' }, ...BACKGROUNDS.map(([k, label, accent, paper]) => h('button', {
+        type: 'button', class: 'swatch', title: label, 'aria-label': label, 'aria-pressed': String(opts.colour === k),
+        style: `background:${paper || (accent === 'mono' ? '#14171f' : accent || card.accent || '#2a5ba8')}`,
+        onclick: (e) => { opts.colour = k; e.currentTarget.parentNode.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); draw(); },
+      }))),
+      h('div', { class: 'row wrap' }, seg('Name on the', 'side', [['left', 'Left'], ['right', 'Right']])),
       h('div', { class: 'row wrap' }, toggle('QR code', 'qr'), toggle('Email and phone', 'details'), toggle('Logo', 'logo', !(card.logo || entry.orgLogo))),
-      h('button', { class: 'btn primary block', onclick: () => canvas && canvas.toBlob((blob) => saveBlob(blob, `background-${entry.username}${entry.slug ? '-' + entry.slug : ''}.jpg`), 'image/jpeg', 0.92) },
+      h('button', { class: 'btn primary block', onclick: () => canvas && canvas.toBlob((blob) => saveBlob(blob, `background-${entry.username}${entry.slug ? '-' + entry.slug : ''}-${opts.colour}.jpg`), 'image/jpeg', 0.92) },
         icon('download'), 'Download (1920 × 1080)')),
     h('section', { class: 'glass panel stack' }, h('h2', {}, 'How to use it'),
       h('p', { class: 'small muted' }, 'Zoom: Settings › Backgrounds & effects › + › Add image. Teams: before or during a meeting, Effects › Backgrounds › Add new. Google Meet: Apply visual effects › Backgrounds › Upload. Webex: Change virtual background › +.'),
@@ -2402,6 +2371,475 @@ window.MKCards.scanned = (result) => {
   if (location.pathname !== '/scan') go('/scan');
   if (scanHandler) scanHandler(result);
 };
+
+// ---------- printed business cards: design editor, print page, staff download ----------
+
+let printEngine = null;
+const loadPrintEngine = () => printEngine || (printEngine = import('/print-engine.js'));
+const pid = () => Math.random().toString(36).slice(2, 10);
+const PRINT_ELEMENTS = { text: 'Text field', lines: 'Contact lines', qr: 'QR code', logo: 'Company logo', photo: 'Photo', rect: 'Colour block' };
+const CARD_SIZES = [['85x55', '85 × 55 mm (UAE / ISO)'], ['90x55', '90 × 55 mm'], ['89x51', '88.9 × 50.8 mm (US 3.5 × 2 in)'], ['90x50', '90 × 50 mm'], ['custom', 'Custom size']];
+
+function defaultPrintLayout() {
+  const T = { font: 'sans', weight: 400, color: '#1f2328', align: 'left', fit: true, spacing: 0 };
+  return {
+    size: { w: 85, h: 55 }, bleed: 3, elements: [
+      { id: pid(), side: 'front', type: 'rect', x: -3, y: -3, w: 91, h: 13, color: '#0f2343', radius: 0 },
+      { id: pid(), side: 'front', type: 'rect', x: -3, y: 10, w: 91, h: 0.6, color: '#b0892f', radius: 0 },
+      { id: pid(), side: 'front', type: 'logo', x: 6, y: 1.5, w: 22, h: 7 },
+      { id: pid(), side: 'front', type: 'text', ...T, field: 'company', x: 34, y: 3.2, w: 45, h: 4, size: 6.5, weight: 700, color: '#ffffff', align: 'right', upper: true, spacing: 0.12 },
+      { id: pid(), side: 'front', type: 'text', ...T, field: 'name', x: 6, y: 17, w: 73, h: 5, size: 12, weight: 700, font: 'serif', color: '#0f2343' },
+      { id: pid(), side: 'front', type: 'text', ...T, field: 'title', x: 6, y: 23.5, w: 73, h: 4, size: 7.5, color: '#4a5672' },
+      { id: pid(), side: 'front', type: 'lines', ...T, x: 6, y: 34, w: 60, h: 14, size: 6.5, lineHeight: 1.45,
+        lines: [{ field: 'mobile', prefix: 'M  ' }, { field: 'office', prefix: 'T  ' }, { field: 'email', prefix: 'E  ' }, { field: 'website', prefix: 'W  ' }] },
+      { id: pid(), side: 'back', type: 'rect', x: -3, y: -3, w: 91, h: 61, color: '#0f2343', radius: 0 },
+      { id: pid(), side: 'back', type: 'rect', x: 29.5, y: 10, w: 26, h: 26, color: '#ffffff', radius: 2 },
+      { id: pid(), side: 'back', type: 'qr', x: 31.5, y: 12, w: 22, h: 22, color: '#0f2343', target: 'card' },
+      { id: pid(), side: 'back', type: 'text', ...T, field: 'static', text: 'Scan to save my contact', x: 6, y: 39, w: 73, h: 4, size: 6.5, color: '#d5b757', align: 'center' },
+      { id: pid(), side: 'back', type: 'text', ...T, field: 'card_url', x: 6, y: 45, w: 73, h: 4, size: 6, color: '#ffffff', align: 'center' },
+    ],
+  };
+}
+
+const SAMPLE_CARD = {
+  id: '', label: 'Sample', link: `${location.origin}/sara-haddad`, vcardLink: `${location.origin}/api/public/vcard?u=sara-haddad&s=`,
+  card: { name: 'Sara Haddad', title: 'Senior Procurement Manager', department: 'Procurement', company: '',
+    phones: [{ label: 'mobile', value: '+971 50 123 4567' }, { label: 'work', value: '+971 4 555 0100' }], emails: [{ value: 'sara.haddad@company.example' }],
+    website: 'https://company.example', address: 'Dubai, United Arab Emirates', links: [{ type: 'linkedin', url: 'https://www.linkedin.com/in/sara' }],
+    ar: { name: 'سارة حداد', title: 'مديرة المشتريات', department: 'المشتريات', address: 'دبي، الإمارات العربية المتحدة' } },
+};
+
+async function urlToDataUrl(E, url) {
+  try { const r = await fetch(url, { credentials: 'same-origin' }); return r.ok ? await E.blobToDataUrl(await r.blob()) : null; } catch { return null; }
+}
+
+/** Loads the company's design: layout, brand fonts, artwork and logo. */
+async function loadPrintSetup() {
+  const E = await loadPrintEngine();
+  const P = await api('/print');
+  P.fresh = !P.layout;
+  P.layout = P.layout || defaultPrintLayout();
+  const fonts = {};
+  for (const [slot, weight] of [['regular', 400], ['bold', 700]]) {
+    if (!P.files[slot]) continue;
+    const r = await fetch(`/api/print/font/${slot}?v=${P.files[slot].v}`, { credentials: 'same-origin' });
+    if (r.ok) fonts[weight] = await r.arrayBuffer();
+  }
+  await E.setBrandFonts(fonts);
+  P.art = {};
+  for (const side of ['front', 'back']) {
+    if (!P.files[side]) continue;
+    try { P.art[side] = await loadPrintArt(E, side, P.files[side]); } catch (err) { P.artError = err.message; }
+  }
+  P.logo = P.org.logo ? await urlToDataUrl(E, P.org.logo) : null;
+  return { E, P };
+}
+
+async function loadPrintArt(E, side, meta) {
+  const r = await fetch(`/api/print/art/${side}?v=${meta.v}`, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error(`The ${side} artwork could not be loaded.`);
+  const blob = await r.blob();
+  return E.prepareArt({ mime: meta.type, data: meta.type === 'image/svg+xml' ? await blob.text() : await E.blobToDataUrl(blob) });
+}
+
+async function printContext(E, P, entry) {
+  const c = entry || SAMPLE_CARD;
+  return { card: c.card, link: c.link, vcardLink: c.vcardLink, org: P.org, art: P.art,
+    images: { logo: P.logo, photo: c.card.photo ? await urlToDataUrl(E, c.card.photo) : null } };
+}
+
+async function renderPrintCard(E, P, entry, cropMarks = true) {
+  const ctx = await printContext(E, P, entry);
+  const [front, back] = [await E.renderSide(P.layout, 'front', ctx, { cropMarks }), await E.renderSide(P.layout, 'back', ctx, { cropMarks })];
+  const person = entry ? entry.card.name : 'sample';
+  return { front, back, base: `${E.fileSafe(person)}${entry && entry.slug ? '-' + E.fileSafe(entry.slug) : ''}` };
+}
+
+const svgBlobUrl = (svg) => URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+
+function printPreviewSheet(title, r) {
+  const fu = svgBlobUrl(r.front.svg), bu = svgBlobUrl(r.back.svg);
+  sheet((close) => [
+    h('h1', {}, title),
+    h('p', { class: 'muted small' }, 'Print-ready SVG in millimetres, with bleed and crop marks. All text is converted to outlines, so the printer needs no fonts.'),
+    ...[...new Set([...r.front.warnings, ...r.back.warnings])].map((w) => h('p', { class: 'notice small' }, w)),
+    h('div', { class: 'pp-pair' },
+      h('figure', {}, h('img', { src: fu, alt: 'Front' }), h('figcaption', {}, 'Front')),
+      h('figure', {}, h('img', { src: bu, alt: 'Back' }), h('figcaption', {}, 'Back'))),
+    h('div', { class: 'row wrap' },
+      h('a', { class: 'btn grow', href: fu, download: `${r.base}-front.svg` }, icon('download'), 'Front SVG'),
+      h('a', { class: 'btn grow', href: bu, download: `${r.base}-back.svg` }, icon('download'), 'Back SVG')),
+    h('button', { class: 'btn primary block', onclick: async () => {
+      const E = await loadPrintEngine();
+      saveBlob(E.zip({ [`${r.base}-front.svg`]: r.front.svg, [`${r.base}-back.svg`]: r.back.svg }), `${r.base}-print-card.zip`);
+    } }, icon('download'), 'Front + back (ZIP)'),
+    h('button', { class: 'btn block', onclick: close }, 'Close'),
+  ]);
+}
+
+/** A staff member downloads their own print card, when the company allows it. */
+async function myPrintCard(entry) {
+  const waiting = toast('Preparing your print card…');
+  try {
+    const { E, P } = await loadPrintSetup();
+    const mine = P.staff.flatMap((s) => s.cards).find((c) => c.id === entry.id);
+    if (!mine) throw new Error('This card is not part of your company\'s print design.');
+    const r = await renderPrintCard(E, P, mine);
+    waiting.remove();
+    printPreviewSheet(`Print card — ${entry.card.label || entry.card.name}`, r);
+  } catch (err) {
+    waiting.remove();
+    toast(err.message);
+  }
+}
+
+// The design editor.
+function designScreen() {
+  if (!me.user.org || me.user.org.role === 'member') return missingScreen('Only company administrators can edit the card design.', 'Card design');
+  const root = h('div', { class: 'stack wide-stack' }, h('section', { class: 'glass panel' }, h('p', { class: 'muted' }, 'Loading the design…')));
+  (async () => {
+    let E, P;
+    try { ({ E, P } = await loadPrintSetup()); } catch (err) { root.replaceChildren(h('section', { class: 'glass panel' }, h('p', { class: 'error' }, err.message))); return; }
+    const L = P.layout;
+    let allowStaff = P.allowStaff, side = 'front', sel = null, dirty = P.fresh, who = '';
+    const people = P.staff.flatMap((s) => s.cards.map((c) => ({ key: c.id, s, c })));
+    const saveBtn = h('button', { class: `btn primary${dirty ? ' pulse' : ''}`, onclick: () => save() }, icon('check'), 'Save design');
+    const mark = () => { if (!dirty) { dirty = true; saveBtn.classList.add('pulse'); } };
+    window.onbeforeunload = () => (dirty ? true : null);
+
+    const stage = h('div', { class: 'dz-stage', tabindex: '0', 'aria-label': 'Card layout' });
+    const artImg = h('img', { class: 'dz-art-img', alt: '', hidden: true });
+    const textImg = h('img', { class: 'dz-text-img', alt: '' });
+    const handles = h('div', { class: 'dz-handles' });
+    stage.append(artImg, textImg, handles);
+    const warnBox = h('div', { class: 'stack' });
+    const props = h('section', { class: 'glass panel stack' });
+    const sideTabs = h('div', { class: 'segmented' }, ...['front', 'back'].map((s) => h('button', { type: 'button', 'aria-pressed': String(s === side), onclick: () => { sel = null; setSide(s); } }, s === 'front' ? 'Front' : 'Back')));
+    const whoSel = h('select', { class: 'input dz-who', 'aria-label': 'Preview with', onchange: (e) => { who = e.target.value; render(); } },
+      h('option', { value: '' }, 'Preview: sample person'), ...people.map((p) => h('option', { value: p.key }, `Preview: ${p.s.name || p.s.username}${p.s.cards.length > 1 ? ' — ' + p.c.label : ''}`)));
+    const els = () => L.elements.filter((e) => e.side === side);
+    const cur = () => L.elements.find((e) => e.id === sel);
+    const label = (e) => (e.type === 'text' ? (e.field === 'static' ? e.text || 'Fixed text' : E.FIELDS[e.field])
+      : e.type === 'lines' ? `Contact lines: ${(e.lines || []).map((l) => E.FIELDS[l.field]).join(', ') || 'empty'}` : PRINT_ELEMENTS[e.type]);
+    const pct = (v, total) => `${(v / total) * 100}%`;
+
+    let busy = false, again = false, boxes = [];
+    const render = async () => {
+      if (busy) { again = true; return; }
+      busy = true;
+      try {
+        const W = L.size.w, H = L.size.h, B = L.bleed;
+        stage.style.aspectRatio = `${W + 2 * B} / ${H + 2 * B}`;
+        const art = P.art[side];
+        if (art) {
+          const a = E.artBox(art, W, H, B);
+          const key = side + (P.files[side] || {}).v;
+          if (artImg.dataset.k !== key) {
+            artImg.src = art.kind === 'svg' ? svgBlobUrl(art.svg) : art.url;
+            artImg.dataset.k = key;
+          }
+          Object.assign(artImg.style, { left: pct(a.x + B, W + 2 * B), top: pct(a.y + B, H + 2 * B), width: pct(a.w, W + 2 * B), height: pct(a.h, H + 2 * B) });
+          artImg.hidden = false;
+        } else artImg.hidden = true;
+        const entry = people.find((p) => p.key === who);
+        const r = await E.renderSide(L, side, await printContext(E, P, entry && entry.c), { withArt: false, guides: true });
+        const old = textImg.src;
+        textImg.src = svgBlobUrl(r.svg);
+        if (old.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(old), 1000);
+        boxes = r.boxes;
+        const warns = [...r.warnings];
+        if (art && E.artBox(art, W, H, B).noBleed) warns.unshift(`The ${side} artwork has no bleed, so it sits on the trim. Ask your designer for a ${W + 2 * B} × ${H + 2 * B} mm version so no white shows after cutting.`);
+        if (P.artError) warns.push(P.artError);
+        warnBox.replaceChildren(...warns.map((w) => h('p', { class: 'notice small' }, w)));
+        drawHandles();
+      } catch (err) { toast(err.message || 'The preview could not be drawn.'); }
+      finally { busy = false; if (again) { again = false; render(); } }
+    };
+    const drawHandles = () => {
+      const W = L.size.w + 2 * L.bleed, H = L.size.h + 2 * L.bleed, B = L.bleed;
+      handles.replaceChildren(...els().map((e) => {
+        const bx = boxes.find((b) => b.id === e.id) || {};
+        const hh = e.type === 'text' || e.type === 'lines' ? bx.h || 4 : e.type === 'qr' ? e.w : e.h;
+        return h('div', { class: `dz-h${e.id === sel ? ' on' : ''}${bx.empty ? ' empty' : ''}`, 'data-h': e.id, title: label(e),
+          style: `left:${pct(e.x + B, W)};top:${pct(e.y + B, H)};width:${pct(e.w, W)};height:${pct(hh, H)}` },
+        bx.empty && h('span', { class: 'dz-ph' }, label(e)), h('i', { class: 'dz-grip', 'data-grip': '' }));
+      }));
+    };
+
+    // ----- properties -----
+    const num = (key, lab, e, step = 0.5, extra = {}) => h('label', { class: 'field' }, h('span', {}, lab),
+      h('input', { class: 'input', type: 'number', step, value: e[key] ?? 0, ...extra, oninput: (ev) => { const v = parseFloat(ev.target.value); if (!Number.isFinite(v)) return; e[key] = v; if (e.type === 'qr' && key === 'w') e.h = v; update(); } }));
+    const select = (lab, value, options, onset) => h('label', { class: 'field' }, h('span', {}, lab),
+      h('select', { class: 'input', onchange: (ev) => onset(ev.target.value) }, ...options.map(([v, l]) => h('option', { value: v, selected: String(v) === String(value) }, l))));
+    const fieldOptions = () => Object.entries(E.FIELDS);
+    const typography = (e) => [
+      h('div', { class: 'grid2' },
+        select('Font', e.font, [['sans', 'Sans (Inter / Noto Kufi)'], ['serif', 'Serif (Noto Serif / Naskh)'], ...(P.files.regular || P.files.bold ? [['brand', `Brand font (${(P.files.regular || P.files.bold).name})`]] : [])], (v) => { e.font = v; update(); }),
+        select('Weight', e.weight, [[400, 'Regular'], [700, 'Bold']], (v) => { e.weight = Number(v); update(); })),
+      h('div', { class: 'grid3' }, num('size', 'Size (pt)', e, 0.5, { min: 3, max: 72 }),
+        h('label', { class: 'field' }, h('span', {}, 'Colour'), h('input', { class: 'input dz-color', type: 'color', value: e.color || '#000000', oninput: (ev) => { e.color = ev.target.value; update(); } })),
+        num('spacing', 'Tracking', e, 0.01, { min: -0.1, max: 0.6 })),
+      h('div', { class: 'segmented' }, ...['left', 'center', 'right'].map((a) => h('button', { type: 'button', 'aria-pressed': String((e.align || 'left') === a), onclick: () => { e.align = a; drawProps(); update(); } }, a[0].toUpperCase() + a.slice(1)))),
+      h('label', { class: 'check inline' }, h('input', { type: 'checkbox', checked: Boolean(e.upper), onchange: (ev) => { e.upper = ev.target.checked; update(); } }), h('span', {}, 'Capitals')),
+      h('label', { class: 'check inline' }, h('input', { type: 'checkbox', checked: e.fit !== false, onchange: (ev) => { e.fit = ev.target.checked; update(); } }), h('span', {}, 'Shrink long text to fit the width')),
+    ];
+    const drawProps = () => {
+      const e = cur();
+      if (!e) {
+        props.replaceChildren(h('h2', {}, 'Fields'),
+          h('p', { class: 'small muted' }, 'Click a field on the card to edit it, drag it to move, drag its corner to resize. Arrow keys nudge it by 0.25 mm (with Shift: 1 mm).'),
+          ...(els().length ? els().map((x) => h('button', { class: 'dz-li', onclick: () => pick(x.id) }, h('strong', {}, PRINT_ELEMENTS[x.type]), h('small', { class: 'muted' }, label(x))))
+            : [h('p', { class: 'small muted' }, 'Nothing on this side yet. Add fields below the card.')]));
+        return;
+      }
+      const parts = [
+        h('div', { class: 'row' }, h('h2', { class: 'grow' }, PRINT_ELEMENTS[e.type]),
+          h('button', { class: 'btn small', title: 'Duplicate', onclick: () => { const c = { ...JSON.parse(JSON.stringify(e)), id: pid(), x: e.x + 2, y: e.y + 2 }; L.elements.push(c); pick(c.id); update(); } }, icon('copy')),
+          h('button', { class: 'btn small danger', title: 'Remove', onclick: () => { L.elements = L.elements.filter((x) => x !== e); sel = null; drawProps(); update(); } }, icon('trash')),
+          h('button', { class: 'btn small', title: 'Done', onclick: () => { sel = null; drawHandles(); drawProps(); } }, icon('check'))),
+      ];
+      if (e.type === 'text') {
+        parts.push(select('Shows', e.field, fieldOptions(), (v) => { e.field = v; if (/_ar$/.test(v)) e.align = 'right'; drawProps(); update(); }));
+        parts.push(e.field === 'static'
+          ? h('label', { class: 'field' }, h('span', {}, 'Text'), h('input', { class: 'input', value: e.text || '', dir: 'auto', maxlength: 200, oninput: (ev) => { e.text = ev.target.value; update(); } }))
+          : h('label', { class: 'field' }, h('span', {}, 'Before the value (optional)'), h('input', { class: 'input', value: e.prefix || '', maxlength: 24, placeholder: 'e.g. M  or  T: ', oninput: (ev) => { e.prefix = ev.target.value; update(); } })));
+      }
+      if (e.type === 'lines') {
+        parts.push(h('p', { class: 'small muted' }, 'Lines with nothing in them are left out and the rest close up.'),
+          ...e.lines.map((l, i) => h('div', { class: 'row dz-line' },
+            h('select', { class: 'input grow', onchange: (ev) => { l.field = ev.target.value; drawProps(); update(); } }, ...fieldOptions().map(([v, n]) => h('option', { value: v, selected: v === l.field }, n))),
+            l.field === 'static'
+              ? h('input', { class: 'input grow', value: l.text || '', placeholder: 'Text', dir: 'auto', oninput: (ev) => { l.text = ev.target.value; update(); } })
+              : h('input', { class: 'input dz-prefix', value: l.prefix || '', placeholder: 'Prefix', maxlength: 24, oninput: (ev) => { l.prefix = ev.target.value; update(); } }),
+            h('button', { class: 'btn small icon-only', 'aria-label': 'Remove line', onclick: () => { e.lines.splice(i, 1); drawProps(); update(); } }, icon('x')))),
+          e.lines.length < 10 && h('button', { class: 'btn small', onclick: () => { e.lines.push({ field: 'website', prefix: '' }); drawProps(); update(); } }, icon('plus'), 'Add line'),
+          num('lineHeight', 'Line spacing', e, 0.05, { min: 0.8, max: 3 }));
+      }
+      if (e.type === 'text' || e.type === 'lines') parts.push(...typography(e));
+      if (e.type === 'qr') {
+        parts.push(select('Opens', e.target, [['card', 'Their card page'], ['vcard', 'Save their contact directly']], (v) => { e.target = v; update(); }),
+          h('label', { class: 'field' }, h('span', {}, 'Colour'), h('input', { class: 'input dz-color', type: 'color', value: e.color || '#000000', oninput: (ev) => { e.color = ev.target.value; update(); } })),
+          h('p', { class: 'small muted' }, 'Keep the QR code on a light, plain background with 2 mm of clear space around it. 18 mm or larger scans best.'));
+      }
+      if (e.type === 'photo') parts.push(select('Shape', e.shape, [['circle', 'Circle'], ['square', 'Rectangle']], (v) => { e.shape = v; update(); }),
+        h('p', { class: 'small muted' }, 'Uses the photo on each person\'s card; left empty for people without one.'));
+      if (e.type === 'logo') parts.push(h('p', { class: 'small muted' }, 'Uses the company logo from Company settings. For the sharpest print, put the logo in the artwork instead.'));
+      if (e.type === 'rect') parts.push(h('div', { class: 'grid2' },
+        h('label', { class: 'field' }, h('span', {}, 'Colour'), h('input', { class: 'input dz-color', type: 'color', value: e.color || '#13315c', oninput: (ev) => { e.color = ev.target.value; update(); } })),
+        num('radius', 'Corner (mm)', e, 0.5, { min: 0 })));
+      parts.push(h('div', { class: 'grid4' }, num('x', 'X (mm)', e, 0.25), num('y', 'Y (mm)', e, 0.25), num('w', e.type === 'qr' ? 'Size (mm)' : 'Width (mm)', e),
+        ['logo', 'photo', 'rect'].includes(e.type) ? num('h', 'Height (mm)', e) : null),
+      h('button', { class: 'btn small', onclick: () => { e.side = e.side === 'front' ? 'back' : 'front'; setSide(e.side); update(); } }, `Move to the ${e.side === 'front' ? 'back' : 'front'}`));
+      props.replaceChildren(...parts.filter(Boolean));
+    };
+    const update = () => { mark(); render(); };
+    const setSide = (s) => {
+      side = s;
+      sideTabs.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String((i === 0 ? 'front' : 'back') === s)));
+      render(); drawProps(); drawFiles();
+    };
+    const pick = (id) => { sel = id; const e = cur(); if (e && e.side !== side) setSide(e.side); drawHandles(); drawProps(); };
+
+    const addBar = h('div', { class: 'row wrap dz-add' }, h('span', { class: 'small muted' }, 'Add to this side:'),
+      ...Object.entries(PRINT_ELEMENTS).map(([k, n]) => h('button', { class: 'btn small', onclick: () => {
+        const T = { font: 'sans', weight: 400, size: 8, color: '#1f2328', align: 'left', fit: true, spacing: 0 };
+        const extra = { text: { ...T, field: 'name', w: 50, h: 5 }, lines: { ...T, size: 6.5, w: 50, h: 10, lineHeight: 1.4, lines: [{ field: 'mobile', prefix: 'M  ' }, { field: 'email', prefix: 'E  ' }] },
+          qr: { w: 20, h: 20, color: '#000000', target: 'card' }, logo: { w: 28, h: 11 }, photo: { w: 16, h: 16, shape: 'circle' }, rect: { w: 30, h: 4, color: '#13315c', radius: 0 } }[k];
+        const el = { id: pid(), side, type: k, x: 8, y: 8, ...extra };
+        L.elements.push(el); pick(el.id); update();
+      } }, icon('plus'), n)));
+
+    // ----- card size -----
+    const sizeKey = () => (CARD_SIZES.find(([k]) => k !== 'custom' && k === `${Math.round(L.size.w)}x${Math.round(L.size.h)}`) || ['custom'])[0];
+    const wIn = h('input', { class: 'input', type: 'number', step: 0.1, value: L.size.w, onchange: (ev) => { L.size.w = Math.min(220, Math.max(30, +ev.target.value || 85)); syncSize(); update(); } });
+    const hIn = h('input', { class: 'input', type: 'number', step: 0.1, value: L.size.h, onchange: (ev) => { L.size.h = Math.min(220, Math.max(30, +ev.target.value || 55)); syncSize(); update(); } });
+    const sizeSel = h('select', { class: 'input', onchange: (ev) => { const v = ev.target.value; if (v === 'custom') return; const [w, hh] = v === '89x51' ? [88.9, 50.8] : v.split('x').map(Number); L.size = { w, h: hh }; syncSize(); update(); } },
+      ...CARD_SIZES.map(([k, n]) => h('option', { value: k, selected: k === sizeKey() }, n)));
+    const syncSize = () => { wIn.value = L.size.w; hIn.value = L.size.h; sizeSel.value = sizeKey(); artSize.textContent = artSizeText(); };
+    const artSizeText = () => `${+(L.size.w + 2 * L.bleed).toFixed(1)} × ${+(L.size.h + 2 * L.bleed).toFixed(1)} mm (${Math.round(((L.size.w + 2 * L.bleed) / 25.4) * 300)} × ${Math.round(((L.size.h + 2 * L.bleed) / 25.4) * 300)} px at 300 dpi)`;
+    const artSize = h('strong', {}, '');
+
+    // ----- artwork and fonts -----
+    const files = h('div', { class: 'stack' });
+    const fonts = h('div', { class: 'stack' });
+    const kb = (n) => (n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+    const fileRow = (key, title, accept, onfile) => {
+      const meta = P.files[key];
+      const input = h('input', { type: 'file', accept, hidden: true, onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ''; if (f) onfile(f); } });
+      return h('div', { class: 'row dz-file' }, input,
+        h('span', { class: 'grow' }, h('strong', {}, title), h('small', { class: 'muted block' }, meta ? `${meta.name} · ${kb(meta.bytes)}` : 'Not uploaded')),
+        h('button', { class: 'btn small', onclick: () => input.click() }, icon('upload'), meta ? 'Replace' : 'Upload'),
+        meta ? h('button', { class: 'btn small danger icon-only', 'aria-label': `Remove ${title}`, onclick: async () => {
+          try {
+            P.files = (await api(`/print/${key === 'regular' || key === 'bold' ? 'font' : 'art'}/${key}`, { method: 'DELETE' })).files;
+            if (key === 'front' || key === 'back') delete P.art[key]; else await reloadFonts();
+            drawFiles(); render(); toast('Removed');
+          } catch (err) { toast(err.message); }
+        } }, icon('trash')) : null);
+    };
+    const reloadFonts = async () => {
+      const map = {};
+      for (const [slot, weight] of [['regular', 400], ['bold', 700]]) if (P.files[slot]) {
+        const r = await fetch(`/api/print/font/${slot}?v=${P.files[slot].v}`, { credentials: 'same-origin' });
+        if (r.ok) map[weight] = await r.arrayBuffer();
+      }
+      await E.setBrandFonts(map);
+    };
+    const drawFiles = () => {
+      files.replaceChildren(...['front', 'back'].map((s) => fileRow(s, s === 'front' ? 'Front artwork' : 'Back artwork', '.svg,image/svg+xml,image/png,image/jpeg', async (f) => {
+        if (!/^image\/(svg\+xml|png|jpeg)$/.test(f.type)) return toast('Use an SVG, PNG or JPG file.');
+        if (f.size > 2e6) return toast('That file is over 2 MB. Save pictures as JPG at 300 dpi, or compress the images inside the SVG.');
+        try {
+          const data = await E.blobToDataUrl(f);
+          const prepared = await E.prepareArt({ mime: f.type, data: f.type === 'image/svg+xml' ? await f.text() : data });
+          toast('Uploading artwork…');
+          P.files = (await api(`/print/art/${s}`, { method: 'PUT', body: { data, name: f.name } })).files;
+          P.art[s] = prepared;
+          drawFiles(); setSide(s); toast('Artwork uploaded');
+        } catch (err) { toast(err.message); }
+      })));
+      fonts.replaceChildren(...[['regular', 'Regular'], ['bold', 'Bold']].map(([k, n]) => fileRow(k, `${n} weight`, '.ttf,.otf,font/ttf,font/otf', async (f) => {
+        if (!/\.(ttf|otf)$/i.test(f.name)) return toast('Use a .ttf or .otf font file.');
+        if (f.size > 1.5e6) return toast('That font file is over 1.5 MB.');
+        try {
+          toast('Uploading font…');
+          P.files = (await api(`/print/font/${k}`, { method: 'PUT', body: { data: await E.blobToDataUrl(f), name: f.name } })).files;
+          await reloadFonts();
+          drawFiles(); drawProps(); render(); toast('Brand font uploaded. Choose "Brand font" on a field to use it.');
+        } catch (err) { toast(err.message); }
+      })));
+    };
+
+    // ----- drag, resize, nudge -----
+    let drag = null;
+    stage.addEventListener('pointerdown', (ev) => {
+      const hd = ev.target.closest('[data-h]');
+      if (!hd) { if (sel) { sel = null; drawHandles(); drawProps(); } return; }
+      const e = L.elements.find((x) => x.id === hd.dataset.h);
+      if (!e) return;
+      if (sel !== e.id) pick(e.id);
+      ev.preventDefault();
+      stage.focus({ preventScroll: true });
+      const r = stage.getBoundingClientRect();
+      drag = { e, grip: Boolean(ev.target.closest('[data-grip]')), x0: ev.clientX, y0: ev.clientY, ex: e.x, ey: e.y, ew: e.w, eh: e.h, mm: (L.size.w + 2 * L.bleed) / r.width, moved: false };
+      stage.setPointerCapture(ev.pointerId);
+    });
+    const snap = (v, free) => (free ? Math.round(v * 100) / 100 : Math.round(v * 4) / 4);
+    stage.addEventListener('pointermove', (ev) => {
+      if (!drag) return;
+      const dx = (ev.clientX - drag.x0) * drag.mm, dy = (ev.clientY - drag.y0) * drag.mm, e = drag.e;
+      if (Math.abs(dx) + Math.abs(dy) > 0.1) drag.moved = true;
+      if (drag.grip) {
+        e.w = Math.max(2, snap(drag.ew + dx, ev.altKey));
+        if (e.type === 'qr') e.h = e.w;
+        else if (!['text', 'lines'].includes(e.type)) e.h = Math.max(1, snap(drag.eh + dy, ev.altKey));
+      } else { e.x = snap(drag.ex + dx, ev.altKey); e.y = snap(drag.ey + dy, ev.altKey); }
+      drawHandles(); render();
+    });
+    const endDrag = () => { if (drag && drag.moved) { mark(); drawProps(); } drag = null; };
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+    stage.addEventListener('keydown', (ev) => {
+      const e = cur();
+      if (!e) return;
+      const d = ev.shiftKey ? 1 : 0.25;
+      const k = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[ev.key];
+      if (k) { ev.preventDefault(); e.x = Math.round((e.x + k[0]) * 100) / 100; e.y = Math.round((e.y + k[1]) * 100) / 100; drawProps(); update(); }
+      if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); L.elements = L.elements.filter((x) => x !== e); sel = null; drawProps(); update(); }
+    });
+
+    const save = async () => {
+      saveBtn.disabled = true;
+      try {
+        const res = await api('/print/layout', { method: 'PUT', body: { layout: L, allowStaff } });
+        L.size = res.layout.size;
+        dirty = false; saveBtn.classList.remove('pulse'); toast('Design saved. Every card in the company now uses it.');
+      } catch (err) { toast(err.message); }
+      saveBtn.disabled = false;
+    };
+
+    root.replaceChildren(...[
+      h('header', { class: 'page-head' },
+        h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, h('a', { href: '/admin' }, 'Admin'), ` · ${P.org.name}`), h('h1', {}, 'Card design'),
+          h('p', { class: 'muted' }, `One fixed design for every ${P.org.name} card. Upload the artwork, then place the fields: each person's details are filled in automatically.`)),
+        h('div', { class: 'head-actions' }, h('a', { class: 'btn', href: '/admin/print' }, icon('download'), 'Print cards'), saveBtn)),
+      P.fresh && h('p', { class: 'notice' }, 'This is a starting layout. Upload your artwork, move the fields to match it, then save.'),
+      h('div', { class: 'dz' },
+        h('div', { class: 'stack dz-main' },
+          h('section', { class: 'glass panel stack' },
+            h('div', { class: 'row wrap' }, sideTabs, h('span', { class: 'grow' }), whoSel),
+            h('div', { class: 'dz-stage-wrap' }, stage),
+            h('p', { class: 'small muted dz-legend' }, h('span', { class: 'lg trim' }), ' Trim (cut line)  ', h('span', { class: 'lg safe' }), ' Safe area: keep text inside  ', h('span', { class: 'lg bleed' }), ' Bleed: artwork should fill to the edge'),
+            warnBox, addBar)),
+        h('aside', { class: 'stack dz-side' },
+          props,
+          h('section', { class: 'glass panel stack' }, h('h2', {}, 'Card'),
+            h('label', { class: 'field' }, h('span', {}, 'Size'), sizeSel),
+            h('div', { class: 'grid3' }, h('label', { class: 'field' }, h('span', {}, 'Width (mm)'), wIn), h('label', { class: 'field' }, h('span', {}, 'Height (mm)'), hIn),
+              h('label', { class: 'field' }, h('span', {}, 'Bleed (mm)'), h('input', { class: 'input', type: 'number', step: 0.5, min: 0, max: 6, value: L.bleed, onchange: (ev) => { L.bleed = Math.min(6, Math.max(0, +ev.target.value || 0)); syncSize(); update(); } }))),
+            h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: allowStaff, onchange: (ev) => { allowStaff = ev.target.checked; mark(); } }),
+              h('span', {}, h('strong', {}, 'Staff can download their own print card'), h('small', { class: 'muted block' }, 'From the card menu in their account.')))),
+          h('section', { class: 'glass panel stack' }, h('h2', {}, 'Artwork'),
+            h('p', { class: 'small muted' }, 'SVG is best (it stays sharp); PNG or JPG at 300 dpi also work. Make it at full bleed size: ', artSize, '. Turn any text in the artwork into outlines.'), files),
+          h('section', { class: 'glass panel stack' }, h('h2', {}, 'Brand font'),
+            h('p', { class: 'small muted' }, 'Optional. Upload your company typeface (.ttf or .otf) and choose "Brand font" on any field. Arabic text uses the brand font if it has Arabic letters, otherwise Noto Kufi. Make sure the font licence allows printing.'), fonts))),
+    ].filter(Boolean));
+    syncSize(); drawFiles(); drawProps(); render();
+  })();
+  return root;
+}
+
+// The print page: everyone's cards, filled in, ready to download.
+function printScreen() {
+  if (!me.user.org || me.user.org.role === 'member') return missingScreen('Only company administrators can print everyone\'s cards.', 'Print cards');
+  const root = h('div', { class: 'stack wide-stack' }, h('section', { class: 'glass panel' }, h('p', { class: 'muted' }, 'Loading…')));
+  (async () => {
+    let E, P;
+    try { ({ E, P } = await loadPrintSetup()); } catch (err) { root.replaceChildren(h('section', { class: 'glass panel' }, h('p', { class: 'error' }, err.message))); return; }
+    const entries = P.staff.flatMap((s) => s.cards.filter((c) => c.active).map((c) => ({ s, c })));
+    const chosen = new Set(entries.filter((x) => x.c.slug === '').map((x) => x.c.id));
+    let crop = true;
+    const count = h('span', { class: 'muted small' });
+    const showCount = () => { count.textContent = `${chosen.size} of ${entries.length} cards selected`; };
+    const progress = h('p', { class: 'muted small', hidden: true });
+    const list = h('div', { class: 'member-list' }, ...entries.map(({ s, c }) => h('div', { class: 'row print-row' },
+      h('input', { type: 'checkbox', checked: chosen.has(c.id), 'aria-label': `Include ${s.name}`, onchange: (ev) => { if (ev.target.checked) chosen.add(c.id); else chosen.delete(c.id); showCount(); } }),
+      h('span', { class: 'grow' }, h('strong', { dir: 'auto' }, c.card.name || s.username), h('small', { class: 'muted block' }, [c.card.title, c.label].filter(Boolean).join(' · '))),
+      h('button', { class: 'btn small', onclick: async () => { try { printPreviewSheet(`Print card — ${c.card.name}`, await renderPrintCard(E, P, c, crop)); } catch (err) { toast(err.message); } } }, icon('qr'), 'Preview'))));
+    const downloadAll = h('button', { class: 'btn primary', onclick: async () => {
+      if (!chosen.size) return toast('Choose at least one card.');
+      downloadAll.disabled = true; progress.hidden = false;
+      try {
+        const files = {};
+        let i = 0;
+        for (const { c } of entries.filter((x) => chosen.has(x.c.id))) {
+          progress.textContent = `Preparing ${++i} of ${chosen.size}…`;
+          const r = await renderPrintCard(E, P, c, crop);
+          files[`front/${r.base}-front.svg`] = r.front.svg;
+          files[`back/${r.base}-back.svg`] = r.back.svg;
+        }
+        saveBlob(E.zip(files), `${E.fileSafe(P.org.name)}-print-cards.zip`);
+        progress.textContent = `Done: ${chosen.size} card${chosen.size === 1 ? '' : 's'}, front and back.`;
+      } catch (err) { toast(err.message); progress.hidden = true; }
+      downloadAll.disabled = false;
+    } }, icon('download'), 'Download selected (SVG, ZIP)');
+    showCount();
+    root.replaceChildren(...[
+      h('header', { class: 'page-head' },
+        h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, h('a', { href: '/admin' }, 'Admin'), ` · ${P.org.name}`), h('h1', {}, 'Print cards'),
+          h('p', { class: 'muted' }, `Each person's details are filled into the ${P.org.name} design: ${P.layout.size.w} × ${P.layout.size.h} mm with ${P.layout.bleed} mm bleed. Text is turned into outlines, so the printer needs no fonts.`)),
+        h('div', { class: 'head-actions' }, h('a', { class: 'btn', href: '/admin/design' }, icon('edit'), 'Edit design'), downloadAll)),
+      P.fresh && h('p', { class: 'notice' }, h('span', {}, 'No design has been saved yet, so MK Cards\' starting design is used. '), h('a', { href: '/admin/design' }, 'Set up your design')),
+      h('section', { class: 'glass panel stack' },
+        h('div', { class: 'row wrap' }, h('button', { class: 'btn small', onclick: () => { entries.forEach((x) => chosen.add(x.c.id)); list.querySelectorAll('input').forEach((i) => { i.checked = true; }); showCount(); } }, 'Select all'),
+          h('button', { class: 'btn small', onclick: () => { chosen.clear(); list.querySelectorAll('input').forEach((i) => { i.checked = false; }); showCount(); } }, 'Select none'),
+          h('label', { class: 'check inline' }, h('input', { type: 'checkbox', checked: crop, onchange: (ev) => { crop = ev.target.checked; } }), h('span', {}, 'Crop marks')),
+          h('span', { class: 'grow' }), count),
+        progress, list),
+    ].filter(Boolean));
+  })();
+  return root;
+}
 
 // ---------- router ----------
 
@@ -2419,6 +2857,8 @@ const routes = [
   [/^\/account$/, settingsScreen, 'account', 'user'],
   [/^\/settings$/, settingsScreen, 'account', 'user'],
   [/^\/admin$/, adminScreen, 'admin', 'user'],
+  [/^\/admin\/design$/, designScreen, 'admin', 'user'],
+  [/^\/admin\/print$/, printScreen, 'admin', 'user'],
   [/^\/contacts$/, contactsScreen, 'contacts', 'user'],
   [/^\/scan$/, scanScreen, 'contacts', 'user'],
   [/^\/signature\/([a-z0-9]+)$/, signatureScreen, 'home', 'user'],
@@ -2430,6 +2870,7 @@ const routes = [
 ];
 
 function render() {
+  window.onbeforeunload = null;
   const path = location.pathname.replace(/\/+$/, '') || '/';
   document.body.classList.remove('card-page');
   document.body.removeAttribute('style');
@@ -2476,6 +2917,7 @@ function render() {
 }
 
 function go(path) {
+  if (window.onbeforeunload && window.onbeforeunload() && !confirm('Leave without saving your card design?')) return;
   history.pushState(null, '', path);
   render();
 }

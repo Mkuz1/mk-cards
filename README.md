@@ -234,10 +234,23 @@ from the Account page.
   Everyone with a temporary password must choose their own at first sign-in. A row for someone already in the company
   updates their main card (and resets their password if it has a temporary_password).
 - **Export staff cards** (Admin): one row per card with all details, `card_link`, `save_contact_link`, `qr_code_png`,
-  `email_signature_link` and `zoom_background_link` (public pages: `/tools/signature?u=…&s=…`, `/tools/background?u=…&s=…`),
-  `print_front_svg` / `print_back_svg` (admins only), the username, and the temporary password until it is changed
-  (stored encrypted with `TOKEN_KEY`, deleted when the person sets their own).
-- **Printed cards** (Admin › Printed business cards): upload a front and back SVG per company with placeholders
-  (`{{name}}`, `{{title}}`, `{{mobile}}`… see `web/src/print.js`) and a rectangle `id="qr"` for the QR code. Lines inside
-  `<g data-stack="4.5">` disappear when empty. Download one person's card or everyone's as a ZIP of SVGs.
-  Uploaded SVGs are cleaned (no scripts, no external files). Starting templates: `docs/store/print-templates/`.
+  `email_signature_link`, `video_call_background_link` plus one link per colour (`video_call_background_navy`, `_company`,
+  `_black`, `_emerald`, `_burgundy`, `_sand`, `_white`; public pages `/tools/signature?u=…&s=…` and
+  `/tools/background?u=…&s=…&colour=…`), the username, and the temporary password until it is changed (stored encrypted
+  with `TOKEN_KEY`, deleted when the person sets their own).
+
+## Card designer (v2.5)
+
+One printed-card design per company; every member's card uses it.
+
+- **Admin › Card design** (`/admin/design`): front and back on a stage in millimetres (size and bleed adjustable).
+  Drag, resize and nudge elements; add text fields (name, title, mobile, email, Arabic fields…), free text, lines,
+  boxes, the QR code and the logo; set font, size, weight, colour, alignment and prefix for each. Upload background
+  artwork per side (SVG, PNG or JPEG, up to 2 MB; SVGs are cleaned) and the company's own fonts (regular and bold,
+  TTF/OTF up to 1.5 MB). Preview with any staff member's details. "Let staff download their own card" is a switch.
+- **Admin › Print cards** (`/admin/print`): pick people, preview, download front and back SVGs as a ZIP, with or
+  without crop marks. Staff (when allowed) use "Print card (SVG)" in their card menu.
+- Text is turned into outlines in the browser with HarfBuzz (`web/public/print/hb/`), so the printer needs no fonts and
+  Arabic joins correctly. Built-in fonts are subsets of Inter, Noto Serif, Noto Kufi Arabic and Noto Naskh Arabic
+  (`web/public/print/fonts/`, OFL; see `LICENSES.txt`). The QR code is vector. Code: `web/public/print-engine.js`,
+  API `/api/print*` in `web/src/index.js`.

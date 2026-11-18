@@ -152,7 +152,7 @@ function drawBanner(card, W, H) {
  * in a top corner and the QR code (opening the card) in the other. theme: 'dark' (the card's colours) or 'light'.
  * qr: { n, isDark(y, x) } from the page's QR maker, or null. logo: a loaded image or null.
  */
-export async function drawCallBackground(card, link, { theme = 'dark', side = 'left', qr = null, logo = null, details = true } = {}) {
+export async function drawCallBackground(card, link, { theme = 'dark', side = 'left', qr = null, logo = null, details = true, paper = '#f5f3ee' } = {}) {
   const W = 1920, H = 1080;
   const { canvas, ctx } = surface(W, H);
   const t = cardTheme(card);
@@ -164,7 +164,7 @@ export async function drawCallBackground(card, link, { theme = 'dark', side = 'l
     backdrop(ctx, W, H, t, card.style);
     glowAt(ctx, W * 0.5, H * 1.05, W * 0.55, rgba(t.a, 0.22));
   } else {
-    ctx.fillStyle = '#f5f3ee';
+    ctx.fillStyle = paper;
     ctx.fillRect(0, 0, W, H);
     glowAt(ctx, 0, 0, W * 0.7, rgba(mixHex(t.a, '#ffffff', 0.7), 0.55));
     glowAt(ctx, W, H, W * 0.6, rgba(mixHex(t.a, '#ffffff', 0.55), 0.35));
