@@ -24,7 +24,7 @@ data class User(
 
 data class Me(
     val user: User?, val cards: List<CardEntry>, val appleWallet: Boolean, val googleWallet: Boolean,
-    val googleSignIn: Boolean, val microsoftSignIn: Boolean,
+    val googleSignIn: Boolean, val microsoftSignIn: Boolean, val passes: List<Pass> = emptyList(),
 ) {
     companion object {
         fun parse(o: JSONObject): Me {
@@ -49,7 +49,9 @@ data class Me(
             }
             val wallet = o.optJSONObject("wallet") ?: JSONObject()
             val sso = o.optJSONObject("sso") ?: JSONObject()
-            return Me(user, cards, wallet.optBoolean("apple"), wallet.optBoolean("google"), sso.optBoolean("google"), sso.optBoolean("microsoft"))
+            val passList = o.optJSONArray("passes") ?: JSONArray()
+            val passes = (0 until passList.length()).mapNotNull { i -> passList.optJSONObject(i)?.let { runCatching { Pass.parse(it) }.getOrNull() } }
+            return Me(user, cards, wallet.optBoolean("apple"), wallet.optBoolean("google"), sso.optBoolean("google"), sso.optBoolean("microsoft"), passes)
         }
     }
 }
@@ -170,4 +172,106 @@ object QrContact {
             name = lines.firstOrNull { l -> l.split(' ').size in 2..4 && l.none { it.isDigit() } && !l.contains('@') }.orEmpty(),
         )
     }
+}
+
+// ---------- personal passes ----------
+
+data class PassField(val label: String = "", val value: String = "") {
+    fun toJson(): JSONObject = JSONObject().put("label", label).put("value", value)
+
+    companion object {
+        fun parse(o: JSONObject?) = PassField(o?.str("label").orEmpty(), o?.str("value").orEmpty())
+        fun list(a: JSONArray?) = (0 until (a?.length() ?: 0)).map { parse(a!!.optJSONObject(it)) }
+    }
+}
+
+/** A pass the person made (student ID, travel pass, ticket…), the same shape as the server's. */
+data class Pass(
+    val id: String = "", val template: String = "custom", val kind: String = "generic", val transit: String = "generic",
+    val org: String = "", val title: String = "Pass", val header: PassField = PassField(), val primary: PassField = PassField(),
+    val to: PassField = PassField(), val front: List<PassField> = emptyList(), val back: List<PassField> = emptyList(),
+    val notes: String = "", val barcodeFormat: String = "qr", val barcodeValue: String = "", val barcodeText: String = "",
+    val bg: String = "#1f3b73", val fg: String = "#ffffff", val labelColour: String = "#bcd0f5",
+    val date: String = "", val expires: String = "", val logo: String = "", val photo: String = "", val banner: String = "",
+) {
+    val showsBanner: Boolean get() = kind in listOf("event", "store", "coupon")
+    val showsPhoto: Boolean get() = kind in listOf("generic", "event")
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("template", template); put("kind", kind); put("transit", transit); put("org", org.trim()); put("title", title.trim())
+        put("header", header.toJson()); put("primary", primary.toJson()); put("to", to.toJson())
+        put("front", JSONArray(front.map { it.toJson() })); put("back", JSONArray(back.map { it.toJson() })); put("notes", notes)
+        put("barcode", JSONObject().put("format", barcodeFormat).put("value", barcodeValue.trim()).put("text", barcodeText.trim()))
+        put("colors", JSONObject().put("bg", bg).put("fg", fg).put("label", labelColour))
+        put("date", date); put("expires", expires); put("logo", logo); put("photo", photo); put("banner", banner)
+    }
+
+    companion object {
+        fun parse(o: JSONObject): Pass {
+            val b = o.optJSONObject("barcode") ?: JSONObject()
+            val c = o.optJSONObject("colors") ?: JSONObject()
+            return Pass(
+                o.str("id"), o.str("template").ifEmpty { "custom" }, o.str("kind").ifEmpty { "generic" }, o.str("transit").ifEmpty { "generic" },
+                o.str("org"), o.str("title").ifEmpty { "Pass" }, PassField.parse(o.optJSONObject("header")), PassField.parse(o.optJSONObject("primary")),
+                PassField.parse(o.optJSONObject("to")), PassField.list(o.optJSONArray("front")), PassField.list(o.optJSONArray("back")),
+                o.str("notes"), b.str("format").ifEmpty { "qr" }, b.str("value"), b.str("text"),
+                c.str("bg").ifEmpty { "#1f3b73" }, c.str("fg").ifEmpty { "#ffffff" }, c.str("label").ifEmpty { "#bcd0f5" },
+                o.str("date"), o.str("expires"), o.str("logo"), o.str("photo"), o.str("banner"),
+            )
+        }
+    }
+}
+
+data class TemplateField(val label: String, val sample: String)
+
+data class PassTemplate(
+    val id: String, val name: String, val group: String, val icon: String, val kind: String, val transit: String,
+    val title: String, val org: String, val bg: String, val fg: String, val label: String,
+    val header: TemplateField, val primary: TemplateField, val to: TemplateField,
+    val front: List<TemplateField>, val back: List<TemplateField>, val barcode: String,
+) {
+    val kindName: String get() = PassOptions.kinds.firstOrNull { it.first == kind }?.second ?: "Pass"
+
+    fun makePass() = Pass(
+        template = id, kind = kind, transit = transit, title = title,
+        header = PassField(header.label), primary = PassField(primary.label), to = PassField(to.label),
+        front = front.map { PassField(it.label) }, back = back.map { PassField(it.label) },
+        barcodeFormat = barcode, bg = bg, fg = fg, labelColour = label,
+    )
+}
+
+data class PassPalette(val name: String, val bg: String, val fg: String, val label: String)
+
+data class PassTemplates(val groups: List<String>, val templates: List<PassTemplate>, val palettes: List<PassPalette>) {
+    companion object {
+        /** The templates shipped inside the app (the same file the website uses), so they work offline. */
+        fun load(context: android.content.Context): PassTemplates {
+            val o = JSONObject(context.assets.open("pass-templates.json").bufferedReader().use { it.readText() })
+            fun field(x: JSONObject?) = TemplateField(x?.str("label").orEmpty(), x?.str("sample").orEmpty())
+            fun fields(a: JSONArray?) = (0 until (a?.length() ?: 0)).map { field(a!!.optJSONObject(it)) }
+            val groups = o.getJSONArray("groups").let { a -> (0 until a.length()).map { a.getString(it) } }
+            val templates = o.getJSONArray("templates").let { a ->
+                (0 until a.length()).map { i ->
+                    val t = a.getJSONObject(i)
+                    val c = t.getJSONObject("colors")
+                    PassTemplate(
+                        t.str("id"), t.str("name"), t.str("group"), t.str("icon"), t.str("kind"), t.str("transit").ifEmpty { "generic" },
+                        t.str("title"), t.str("org"), c.str("bg"), c.str("fg"), c.str("label"),
+                        field(t.optJSONObject("header")), field(t.optJSONObject("primary")), field(t.optJSONObject("to")),
+                        fields(t.optJSONArray("front")), fields(t.optJSONArray("back")), t.str("barcode"),
+                    )
+                }
+            }
+            val palettes = o.getJSONArray("palettes").let { a ->
+                (0 until a.length()).map { i -> a.getJSONObject(i).let { PassPalette(it.str("name"), it.str("bg"), it.str("fg"), it.str("label")) } }
+            }
+            return PassTemplates(groups, templates, palettes)
+        }
+    }
+}
+
+object PassOptions {
+    val kinds = listOf("generic" to "Card or ID", "event" to "Event ticket", "transit" to "Travel ticket (from → to)", "store" to "Store or membership card", "coupon" to "Coupon")
+    val transits = listOf("train" to "Train", "air" to "Flight", "bus" to "Bus or coach", "boat" to "Ferry", "generic" to "Other")
+    val barcodes = listOf("qr" to "QR code", "pdf417" to "PDF417", "aztec" to "Aztec", "code128" to "Code 128", "ean13" to "EAN-13", "code39" to "Code 39", "none" to "No barcode")
 }

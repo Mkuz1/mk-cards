@@ -45,6 +45,10 @@ struct CardsView: View {
             .navigationTitle("My Cards")
             .navigationDestination(for: String.self) { id in CardDetailView(cardId: id) }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { model.showScan = true } label: { Image(systemName: "viewfinder") }
+                        .accessibilityLabel("Scan a card")
+                }
                 if entries.count < 10 {
                     ToolbarItem(placement: .primaryAction) {
                         Button { page = newCardPage } label: { Image(systemName: "plus.circle.fill").font(.title3) }

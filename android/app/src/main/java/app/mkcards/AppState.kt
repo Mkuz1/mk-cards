@@ -10,7 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class Phase { Loading, SignedOut, SignedIn }
-enum class Tab { Cards, Share, Scan, Contacts, Account }
+enum class Tab { Cards, Share, Passes, Scan, Contacts, Account }
 
 /**
  * The app's state. Lists come from the server when online and from the phone's saved copy when offline;

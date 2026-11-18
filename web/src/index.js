@@ -3,12 +3,13 @@
 import { DurableObject } from 'cloudflare:workers';
 import { ASSETS } from './assets.generated.js';
 import { qrPng, qrSvg } from './qr.js';
-import { applePass, googleSaveUrl, walletStatus } from './wallet.js';
+import { applePass, googleSaveUrl, walletStatus, packApplePass, googleSaveGeneric, googleIssuer } from './wallet.js';
 import { decrypt, encrypt, randomToken, readSigned, sha256b64url, signValue } from './secure.js';
 import { SSO_PROVIDERS, authorizeUrl, finishSignIn, ssoStatus, verifyAppleSignIn } from './sso.js';
 import { salesforceAuthorizeUrl, salesforceExchange, salesforceHost, salesforcePushLead, salesforceRefresh, salesforceRevoke, salesforceWho } from './crm.js';
 import { readBusinessCard } from './scan.js';
 import { sanitizeSvg } from './print.js';
+import { cleanPass, applePassJson, googlePassClass, googlePassObject, MAX_PASSES } from './passes.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -41,6 +42,8 @@ CREATE TABLE IF NOT EXISTS identities (
 CREATE INDEX IF NOT EXISTS identities_user ON identities (user_id);
 CREATE TABLE IF NOT EXISTS org_sso (provider TEXT NOT NULL, value TEXT NOT NULL, org_id TEXT NOT NULL, label TEXT, PRIMARY KEY (provider, value));
 CREATE TABLE IF NOT EXISTS handoffs (code_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS passes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS passes_user ON passes (user_id, created_at);
 CREATE TABLE IF NOT EXISTS crm (owner TEXT PRIMARY KEY, provider TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL);
 `;
 // Columns added after the first release, created on start-up when missing.
@@ -147,7 +150,7 @@ const RESERVED = new Set([
   'api', 'new', 'edit', 'share', 'inbox', 'settings', 'privacy', 'terms', 'login', 'register', 'logout',
   'account', 'admin', 'icons', 'vendor', 'assets', 'static', 'about', 'help', 'support', 'www', 'app',
   'mkcards', 'mk-cards', 'me', 'public', 'null', 'undefined', 'index', 'sw', 'manifest', 'favicon', 'vcard', 'contacts',
-  'scan', 'signature', 'background', 'welcome-password', 'crm', 'auth', 'sso', 'leads', 'billing', 'pricing', 'delete-account', 'tools', 'print',
+  'scan', 'signature', 'background', 'welcome-password', 'crm', 'auth', 'sso', 'leads', 'billing', 'pricing', 'delete-account', 'tools', 'print', 'passes', 'pass',
 ]);
 const USERNAME = /^[a-z0-9][a-z0-9_-]{2,29}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,29}$/;
@@ -301,6 +304,13 @@ async function api(request, env, url) {
   if (path === '/me' && method === 'DELETE') return deleteAccount(request, env, url);
   if (path === '/me/password' && method === 'POST') return changePassword(request, env);
   if (path === '/cards' && method === 'POST') return createCard(request, env);
+  if (path === '/passes' && method === 'GET') return listPasses(request, env);
+  if (path === '/passes' && method === 'POST') return savePass(request, env, null);
+  let ps = /^\/passes\/([a-z0-9]{12})$/.exec(path);
+  if (ps && method === 'PUT') return savePass(request, env, ps[1]);
+  if (ps && method === 'DELETE') return deletePass(request, env, ps[1]);
+  ps = /^\/passes\/([a-z0-9]{12})\/wallet\/(apple\.pkpass|google)$/.exec(path);
+  if (ps && method === 'GET') return passWallet(request, env, url, ps[1], ps[2]);
 
   let m = /^\/cards\/([a-z0-9]{6,20})$/.exec(path);
   if (m && method === 'PUT') return updateCard(request, env, m[1]);
@@ -415,7 +425,7 @@ async function accountState(env, user) {
   const { results: ids } = await env.DB.prepare('SELECT provider, email FROM identities WHERE user_id = ?').bind(user.id).all();
   return {
     user: { ...publicUser(user), org, hasPassword: Boolean(user.has_password), identities: ids.map((i) => ({ provider: i.provider, email: i.email || '' })) },
-    cards: await cardsOf(env, user.id), wallet: walletStatus(env), sso: ssoStatus(env),
+    cards: await cardsOf(env, user.id), passes: await passesOf(env, user.id), wallet: walletStatus(env), sso: ssoStatus(env),
   };
 }
 
@@ -442,6 +452,7 @@ async function deleteAccount(request, env, url) {
     env.DB.prepare('DELETE FROM events WHERE card_id IN (SELECT id FROM cards WHERE user_id = ?)').bind(user.id),
     env.DB.prepare('DELETE FROM contacts WHERE card_id IN (SELECT id FROM cards WHERE user_id = ?)').bind(user.id),
     env.DB.prepare('DELETE FROM media WHERE user_id = ?').bind(user.id),
+    env.DB.prepare('DELETE FROM passes WHERE user_id = ?').bind(user.id),
     env.DB.prepare('DELETE FROM cards WHERE user_id = ?').bind(user.id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
     env.DB.prepare('DELETE FROM identities WHERE user_id = ?').bind(user.id),
@@ -1815,6 +1826,10 @@ const MEDIA_RULES = {
   thumb: { types: ['image/png'], max: 250_000 },
   strip: { types: ['image/png'], max: 700_000 },
   logo: { types: ['image/png'], max: 300_000 },
+  // Pictures on personal passes (always PNG: Apple Wallet needs it).
+  plogo: { types: ['image/png'], max: 300_000 },
+  pphoto: { types: ['image/png'], max: 400_000 },
+  pbanner: { types: ['image/png'], max: 700_000 },
 };
 
 function parseImage(dataUrl, kind) {
@@ -1900,6 +1915,112 @@ function bytesToBase64(bytes) {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+
+// ---------- personal passes ----------
+
+const PASS_PICTURES = { logo: 'plogo', photo: 'pphoto', banner: 'pbanner' };
+
+async function passesOf(env, userId) {
+  const { results } = await env.DB.prepare('SELECT id, data, updated_at FROM passes WHERE user_id = ? ORDER BY created_at').bind(userId).all();
+  return results.map((r) => ({ id: r.id, updatedAt: r.updated_at, ...JSON.parse(r.data) }));
+}
+
+async function listPasses(request, env) {
+  const user = await requireUser(request, env);
+  return json({ passes: await passesOf(env, user.id) });
+}
+
+async function savePass(request, env, id) {
+  const user = await requireUser(request, env);
+  const body = await readJson(request, 1_600_000);
+  let pass;
+  try {
+    pass = cleanPass(body.pass || body);
+  } catch (err) {
+    throw new HttpError(400, err.message);
+  }
+  const input = body.pass || body;
+  const now = Date.now();
+  if (id) {
+    const row = await env.DB.prepare('SELECT 1 FROM passes WHERE id = ? AND user_id = ?').bind(id, user.id).first();
+    if (!row) throw new HttpError(404, 'Pass not found.');
+  } else {
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM passes WHERE user_id = ?').bind(user.id).first();
+    if (count.n >= MAX_PASSES) throw new HttpError(409, `You can have up to ${MAX_PASSES} passes.`);
+    id = randomId(12);
+    await env.DB.prepare('INSERT INTO passes (id, user_id, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').bind(id, user.id, '{}', now, now).run();
+  }
+  // Pictures: a new one arrives as a data: URL, a kept one as its address; anything else removes it.
+  for (const [field, kind] of Object.entries(PASS_PICTURES)) {
+    const value = typeof input[field] === 'string' ? input[field] : '';
+    if (value.startsWith('data:')) {
+      const image = parseImage(value, kind);
+      if (!image) throw new HttpError(400, `That ${field} could not be used. Try a smaller picture.`);
+      pass[field] = await replaceMedia(env, user.id, id, kind, image);
+      continue;
+    }
+    const m = MEDIA_PATH.exec(value);
+    const owned = m && await env.DB.prepare('SELECT 1 FROM media WHERE id = ? AND card_id = ? AND kind = ?').bind(m[1], id, kind).first();
+    if (owned) pass[field] = value;
+    else {
+      pass[field] = '';
+      await env.DB.prepare('DELETE FROM media WHERE card_id = ? AND kind = ?').bind(id, kind).run();
+    }
+  }
+  await env.DB.prepare('UPDATE passes SET data = ?, updated_at = ? WHERE id = ? AND user_id = ?').bind(JSON.stringify(pass), now, id, user.id).run();
+  return json({ pass: { id, updatedAt: now, ...pass } });
+}
+
+async function deletePass(request, env, id) {
+  const user = await requireUser(request, env);
+  const row = await env.DB.prepare('SELECT 1 FROM passes WHERE id = ? AND user_id = ?').bind(id, user.id).first();
+  if (!row) throw new HttpError(404, 'Pass not found.');
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM media WHERE card_id = ? AND user_id = ?').bind(id, user.id),
+    env.DB.prepare('DELETE FROM passes WHERE id = ? AND user_id = ?').bind(id, user.id),
+  ]);
+  return json({ ok: true });
+}
+
+async function passWallet(request, env, url, id, kind) {
+  const user = await requireUser(request, env);
+  const row = await env.DB.prepare('SELECT data FROM passes WHERE id = ? AND user_id = ?').bind(id, user.id).first();
+  if (!row) throw new HttpError(404, 'Pass not found.');
+  const pass = JSON.parse(row.data);
+  const ready = walletStatus(env);
+  if (kind === 'apple.pkpass') {
+    if (!ready.apple) throw new HttpError(503, 'Apple Wallet passes are not set up yet.');
+    let file;
+    try {
+      const bytes = async (path) => (path ? (await mediaBytes(env, path))?.bytes || null : null);
+      const { pass: json, images } = applePassJson(id, pass, { hasPhoto: Boolean(pass.photo), hasBanner: Boolean(pass.banner) });
+      file = await packApplePass(env, json, {
+        logo: images.logo ? await bytes(pass.logo) : null,
+        strip: images.strip ? await bytes(pass.banner) : null,
+        thumbnail: images.thumbnail ? await bytes(pass.photo) : null,
+      });
+    } catch (err) {
+      console.error('Personal Apple pass failed', err);
+      throw new HttpError(503, 'The Apple Wallet pass could not be made right now.');
+    }
+    const name = slugify(pass.title) || 'pass';
+    return new Response(file, {
+      headers: {
+        'content-type': 'application/vnd.apple.pkpass',
+        'content-disposition': `attachment; filename="${name}.pkpass"`,
+        'cache-control': 'private, no-store',
+      },
+    });
+  }
+  if (!ready.google) throw new HttpError(503, 'Google Wallet passes are not set up yet.');
+  let problem = '';
+  const issuer = googleIssuer(env);
+  const save = await googleSaveGeneric(env, googlePassClass(issuer),
+    googlePassObject(issuer, id, pass, { origin: url.origin, logo: pass.logo, photo: pass.photo, banner: pass.banner }),
+    { origin: url.origin, report: (message) => { problem = message; } });
+  if (url.searchParams.has('check')) return json({ storedAtGoogle: !problem, problem, linkLength: save.length });
+  return new Response(null, { status: 302, headers: { location: save, 'cache-control': 'private, no-store' } });
 }
 
 // ---------- wallet passes (owner only) ----------

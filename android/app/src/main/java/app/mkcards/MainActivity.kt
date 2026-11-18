@@ -173,13 +173,18 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Gets the Google Wallet address for a card and opens it. */
-    fun addToGoogleWallet(cardId: String) {
+    fun addToGoogleWallet(cardId: String) = openGoogleWallet("/api/cards/$cardId/wallet/google", "card")
+
+    /** The same for a pass the person made. */
+    fun addPassToGoogleWallet(passId: String) = openGoogleWallet("/api/passes/$passId/wallet/google", "pass")
+
+    private fun openGoogleWallet(path: String, what: String) {
         lifecycleScope.launch {
             val link = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { Api.request("/api/cards/$cardId/wallet/google").location }.getOrNull()
+                runCatching { Api.request(path).location }.getOrNull()
             }
             if (link != null && link.startsWith("https://pay.google.com")) open(Uri.parse(link))
-            else state.message = if (state.offline) "Connect to the internet to add the card to Google Wallet." else "Google Wallet is not available right now."
+            else state.message = if (state.offline) "Connect to the internet to add the $what to Google Wallet." else "Google Wallet is not available right now."
         }
     }
 

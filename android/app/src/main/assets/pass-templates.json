@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "groups": ["Education", "Work", "Transport", "Events", "Membership", "Shopping", "Health and travel", "Other"],
+  "templates": [
+    {
+      "id": "student-id", "name": "Student ID", "group": "Education", "icon": "school", "kind": "generic",
+      "title": "Student ID", "org": "University name", "colors": { "bg": "#1f3b73", "fg": "#ffffff", "label": "#bcd0f5" },
+      "header": { "label": "Year", "sample": "2026–27" }, "primary": { "label": "Student", "sample": "Sara Haddad" },
+      "front": [{ "label": "Student no.", "sample": "20261458" }, { "label": "Faculty", "sample": "Engineering" }, { "label": "Programme", "sample": "BSc Computer Science" }, { "label": "Valid until", "sample": "31 Aug 2027" }],
+      "back": [{ "label": "Campus", "sample": "" }, { "label": "Date of birth", "sample": "" }, { "label": "If found, please contact", "sample": "" }],
+      "barcode": "qr", "photo": true, "banner": false
+    },
+    {
+      "id": "library-card", "name": "Library card", "group": "Education", "icon": "book", "kind": "generic",
+      "title": "Library card", "org": "Library name", "colors": { "bg": "#5b2a1e", "fg": "#fff7ef", "label": "#f0c9a8" },
+      "header": { "label": "Branch", "sample": "Central" }, "primary": { "label": "Member", "sample": "Sara Haddad" },
+      "front": [{ "label": "Card no.", "sample": "2900 1458 7731" }, { "label": "Expires", "sample": "Dec 2027" }],
+      "back": [{ "label": "Opening hours", "sample": "" }, { "label": "Phone", "sample": "" }],
+      "barcode": "code128", "photo": false, "banner": false
+    },
+    {
+      "id": "school-pass", "name": "School pass", "group": "Education", "icon": "backpack", "kind": "generic",
+      "title": "School pass", "org": "School name", "colors": { "bg": "#0f6b5c", "fg": "#ffffff", "label": "#bfe9df" },
+      "header": { "label": "Class", "sample": "10B" }, "primary": { "label": "Pupil", "sample": "Adam Haddad" },
+      "front": [{ "label": "Pupil no.", "sample": "S-4471" }, { "label": "School year", "sample": "2026–27" }],
+      "back": [{ "label": "Parent or guardian", "sample": "" }, { "label": "Emergency phone", "sample": "" }],
+      "barcode": "qr", "photo": true, "banner": false
+    },
+    {
+      "id": "employee-badge", "name": "Employee badge", "group": "Work", "icon": "badge", "kind": "generic",
+      "title": "Employee badge", "org": "Company name", "colors": { "bg": "#14181f", "fg": "#ffffff", "label": "#d5b757" },
+      "header": { "label": "Site", "sample": "HQ" }, "primary": { "label": "Name", "sample": "Sara Haddad" },
+      "front": [{ "label": "Employee no.", "sample": "E-10293" }, { "label": "Department", "sample": "Finance" }, { "label": "Job title", "sample": "Analyst" }, { "label": "Access level", "sample": "Floors 1–4" }],
+      "back": [{ "label": "Security desk", "sample": "" }, { "label": "If found, please return to", "sample": "" }],
+      "barcode": "qr", "photo": true, "banner": false
+    },
+    {
+      "id": "visitor-pass", "name": "Visitor pass", "group": "Work", "icon": "visitor", "kind": "generic",
+      "title": "Visitor pass", "org": "Company or building", "colors": { "bg": "#e8553e", "fg": "#ffffff", "label": "#ffe2d9" },
+      "header": { "label": "Date", "sample": "18 Nov" }, "primary": { "label": "Visitor", "sample": "Sara Haddad" },
+      "front": [{ "label": "Host", "sample": "Omar Saleh" }, { "label": "Floor", "sample": "7" }],
+      "back": [{ "label": "Reception", "sample": "" }, { "label": "Wi-Fi", "sample": "" }],
+      "barcode": "qr", "photo": false, "banner": false
+    },
+    {
+      "id": "travel-card", "name": "Bus and metro pass", "group": "Transport", "icon": "bus", "kind": "generic",
+      "title": "Travel pass", "org": "Transport network", "colors": { "bg": "#0a4fa6", "fg": "#ffffff", "label": "#ffd34d" },
+      "header": { "label": "Zones", "sample": "1–3" }, "primary": { "label": "Holder", "sample": "Sara Haddad" },
+      "front": [{ "label": "Card no.", "sample": "6301 2245 9910" }, { "label": "Type", "sample": "Monthly" }, { "label": "Valid from", "sample": "1 Nov" }, { "label": "Valid until", "sample": "30 Nov" }],
+      "back": [{ "label": "Customer service", "sample": "" }, { "label": "Conditions", "sample": "" }],
+      "barcode": "qr", "photo": true, "banner": false
+    },
+    {
+      "id": "train-ticket", "name": "Train ticket", "group": "Transport", "icon": "train", "kind": "transit", "transit": "train",
+      "title": "Train ticket", "org": "Rail company", "colors": { "bg": "#7a1f2b", "fg": "#ffffff", "label": "#f6c6cc" },
+      "header": { "label": "Date", "sample": "24 Nov" }, "primary": { "label": "From", "sample": "Paris" }, "to": { "label": "To", "sample": "Lyon" },
+      "front": [{ "label": "Departs", "sample": "08:42" }, { "label": "Coach", "sample": "12" }, { "label": "Seat", "sample": "45" }, { "label": "Class", "sample": "2nd" }],
+      "back": [{ "label": "Booking reference", "sample": "" }, { "label": "Passenger", "sample": "" }, { "label": "Arrives", "sample": "" }],
+      "barcode": "aztec", "photo": false, "banner": false
+    },
+    {
+      "id": "boarding-pass", "name": "Boarding pass", "group": "Transport", "icon": "plane", "kind": "transit", "transit": "air",
+      "title": "Boarding pass", "org": "Airline", "colors": { "bg": "#0e2a47", "fg": "#ffffff", "label": "#8ec5ff" },
+      "header": { "label": "Flight", "sample": "MK 204" }, "primary": { "label": "Dubai", "sample": "DXB" }, "to": { "label": "Paris", "sample": "CDG" },
+      "front": [{ "label": "Passenger", "sample": "Sara Haddad" }, { "label": "Boarding", "sample": "07:15" }, { "label": "Gate", "sample": "B12" }, { "label": "Seat", "sample": "14A" }],
+      "back": [{ "label": "Booking reference", "sample": "" }, { "label": "Departure date", "sample": "" }, { "label": "Baggage", "sample": "" }],
+      "barcode": "pdf417", "photo": false, "banner": false
+    },
+    {
+      "id": "bus-ticket", "name": "Coach ticket", "group": "Transport", "icon": "bus", "kind": "transit", "transit": "bus",
+      "title": "Coach ticket", "org": "Coach company", "colors": { "bg": "#2d6a2f", "fg": "#ffffff", "label": "#d6f0c4" },
+      "header": { "label": "Date", "sample": "2 Dec" }, "primary": { "label": "From", "sample": "Beirut" }, "to": { "label": "To", "sample": "Tripoli" },
+      "front": [{ "label": "Departs", "sample": "10:30" }, { "label": "Seat", "sample": "18" }],
+      "back": [{ "label": "Booking reference", "sample": "" }, { "label": "Platform", "sample": "" }],
+      "barcode": "qr", "photo": false, "banner": false
+    },
+    {
+      "id": "ferry-ticket", "name": "Ferry ticket", "group": "Transport", "icon": "ferry", "kind": "transit", "transit": "boat",
+      "title": "Ferry ticket", "org": "Ferry line", "colors": { "bg": "#05607a", "fg": "#ffffff", "label": "#b8eaf5" },
+      "header": { "label": "Date", "sample": "5 Jul" }, "primary": { "label": "From", "sample": "Nice" }, "to": { "label": "To", "sample": "Bastia" },
+      "front": [{ "label": "Sails", "sample": "09:00" }, { "label": "Vehicle", "sample": "Car" }, { "label": "Cabin", "sample": "—" }],
+      "back": [{ "label": "Booking reference", "sample": "" }, { "label": "Check-in closes", "sample": "" }],
+      "barcode": "qr", "photo": false, "banner": false
+    },
+    {
+      "id": "parking-permit", "name": "Parking permit", "group": "Transport", "icon": "car", "kind": "generic",
+      "title": "Parking permit", "org": "Car park or building", "colors": { "bg": "#243b55", "fg": "#ffffff", "label": "#ffcf5c" },
+      "header": { "label": "Bay", "sample": "B-27" }, "primary": { "label": "Vehicle", "sample": "AB-123-CD" },
+      "front": [{ "label": "Permit no.", "sample": "P-5531" }, { "label": "Valid until", "sample": "31 Mar" }],
+      "back": [{ "label": "Car park", "sample": "" }, { "label": "Rules", "sample": "" }],
+      "barcode": "qr", "photo": false, "banner": false
+    },
+    {
+      "id": "event-ticket", "name": "Event ticket", "group": "Events", "icon": "ticket", "kind": "event",
+      "title": "Event ticket", "org": "Organiser", "colors": { "bg": "#3b1d6e", "fg": "#ffffff", "label": "#e2c6ff" },
+      "header": { "label": "Date", "sample": "12 Dec" }, "primary": { "label": "Event", "sample": "Winter Concert" },
+      "front": [{ "label": "Doors", "sample": "19:00" }, { "label": "Section", "sample": "A" }, { "label": "Row", "sample": "F" }, { "label": "Seat", "sample": "22" }],
+      "back": [{ "label": "Venue", "sample": "" }, { "label": "Ticket holder", "sample": "" }, { "label": "Order no.", "sample": "" }],
+      "barcode": "qr", "photo": false, "banner": true
+    },
+    {
+      "id": "conference-badge", "name": "Conference badge", "group": "Events", "icon": "mic", "kind": "event",
+      "title": "Conference badge", "org": "Conference", "colors": { "bg": "#0d3b66", "fg": "#ffffff", "label": "#f4d35e" },
+      "header": { "label": "Pass", "sample": "All access" }, "primary": { "label": "Attendee", "sample": "Sara Haddad" },
+      "front": [{ "label": "Company", "sample": "Northwind" }, { "label": "Role", "sample": "Speaker" }],
+      "back": [{ "label": "Venue", "sample": "" }, { "label": "Dates", "sample": "" }, { "label": "Wi-Fi", "sample": "" }],
+      "barcode": "qr", "photo": true, "banner": false
+    },
+    {
+      "id": "season-ticket", "name": "Season ticket", "group": "Events", "icon": "star", "kind": "event",
+      "title": "Season ticket", "org": "Club or theatre", "colors": { "bg": "#0b6e4f", "fg": "#ffffff", "label": "#ffe08a" },
+      "header": { "label": "Season", "sample": "2026–27" }, "primary": { "label": "Holder", "sample": "Sara Haddad" },
+      "front": [{ "label": "Stand", "sample": "North" }, { "label": "Row", "sample": "K" }, { "label": "Seat", "sample": "108" }, { "label": "Member no.", "sample": "77310" }],
+      "back": [{ "label": "Ground", "sample": "" }, { "label": "Ticket office", "sample": "" }],
+      "barcode": "qr", "photo": false, "banner": true
+    },
+    {
+      "id": "gym-membership", "name": "Gym membership", "group": "Membership", "icon": "dumbbell", "kind": "store",
+      "title": "Gym membership", "org": "Gym name", "colors": { "bg": "#111111", "fg": "#ffffff", "label": "#ff5a36" },
+      "header": { "label": "Plan", "sample": "Premium" }, "primary": { "label": "Member", "sample": "Sara Haddad" },
+      "front": [{ "label": "Member no.", "sample": "G-88412" }, { "label": "Renews", "sample": "1 Jan" }],
+      "back": [{ "label": "Club", "sample": "" }, { "label": "Opening hours", "sample": "" }],
+      "barcode": "code128", "photo": false, "banner": true
+    },
+    {
+      "id": "club-membership", "name": "Club membership", "group": "Membership", "icon": "users", "kind": "generic",
+      "title": "Membership card", "org": "Club or association", "colors": { "bg": "#1d3557", "fg": "#ffffff", "label": "#a8dadc" },
+      "header": { "label": "Since", "sample": "2019" }, "primary": { "label": "Member", "sample": "Sara Haddad" },
+      "front": [{ "label": "Member no.", "sample": "C-0412" }, { "label": "Membership", "sample": "Full" }, { "label": "Valid until", "sample": "Dec 2026" }],
+      "back": [{ "label": "Benefits", "sample": "" }, { "label": "Contact", "sample": "" }],
+      "barcode": "qr", "photo": true, "banner": false
+    },
+    {
+      "id": "loyalty-card", "name": "Loyalty card", "group": "Shopping", "icon": "star", "kind": "store",
+      "title": "Loyalty card", "org": "Shop name", "colors": { "bg": "#b5121b", "fg": "#ffffff", "label": "#ffd6d8" },
+      "header": { "label": "Points", "sample": "1,240" }, "primary": { "label": "Member", "sample": "Sara Haddad" },
+      "front": [{ "label": "Card no.", "sample": "6045 1123 9981" }, { "label": "Tier", "sample": "Gold" }],
+      "back": [{ "label": "Customer service", "sample": "" }],
+      "barcode": "ean13", "photo": false, "banner": true
+    },
+    {
+      "id": "gift-card", "name": "Gift card", "group": "Shopping", "icon": "gift", "kind": "store",
+      "title": "Gift card", "org": "Shop name", "colors": { "bg": "#c2185b", "fg": "#ffffff", "label": "#ffd1e4" },
+      "header": { "label": "Balance", "sample": "€50.00" }, "primary": { "label": "Gift card", "sample": "€50" },
+      "front": [{ "label": "Card no.", "sample": "7781 2290" }, { "label": "PIN", "sample": "••••" }],
+      "back": [{ "label": "From", "sample": "" }, { "label": "Message", "sample": "" }, { "label": "Expires", "sample": "" }],
+      "barcode": "code128", "photo": false, "banner": true
+    },
+    {
+      "id": "coupon", "name": "Coupon", "group": "Shopping", "icon": "tag", "kind": "coupon",
+      "title": "Coupon", "org": "Shop name", "colors": { "bg": "#f28c28", "fg": "#ffffff", "label": "#fff0d6" },
+      "header": { "label": "Code", "sample": "WINTER20" }, "primary": { "label": "Offer", "sample": "20% off" },
+      "front": [{ "label": "Valid until", "sample": "31 Dec" }],
+      "back": [{ "label": "Terms", "sample": "" }],
+      "barcode": "qr", "photo": false, "banner": true
+    },
+    {
+      "id": "insurance-card", "name": "Insurance card", "group": "Health and travel", "icon": "heart", "kind": "generic",
+      "title": "Insurance card", "org": "Insurer", "colors": { "bg": "#00796b", "fg": "#ffffff", "label": "#c8f1ea" },
+      "header": { "label": "Plan", "sample": "Family" }, "primary": { "label": "Insured", "sample": "Sara Haddad" },
+      "front": [{ "label": "Member no.", "sample": "INS-447100" }, { "label": "Policy no.", "sample": "90-2231" }, { "label": "Valid until", "sample": "Dec 2026" }],
+      "back": [{ "label": "Emergency line", "sample": "" }, { "label": "Network", "sample": "" }],
+      "barcode": "none", "photo": false, "banner": false
+    },
+    {
+      "id": "hotel-booking", "name": "Hotel booking", "group": "Health and travel", "icon": "hotel", "kind": "generic",
+      "title": "Hotel booking", "org": "Hotel name", "colors": { "bg": "#3e2c23", "fg": "#ffffff", "label": "#e8cfa5" },
+      "header": { "label": "Room", "sample": "512" }, "primary": { "label": "Guest", "sample": "Sara Haddad" },
+      "front": [{ "label": "Check-in", "sample": "18 Nov" }, { "label": "Check-out", "sample": "21 Nov" }],
+      "back": [{ "label": "Booking reference", "sample": "" }, { "label": "Address", "sample": "" }, { "label": "Phone", "sample": "" }],
+      "barcode": "qr", "photo": false, "banner": false
+    },
+    {
+      "id": "emergency-info", "name": "Emergency info", "group": "Health and travel", "icon": "medical", "kind": "generic",
+      "title": "Emergency info", "org": "In case of emergency", "colors": { "bg": "#b00020", "fg": "#ffffff", "label": "#ffd2d8" },
+      "header": { "label": "Blood type", "sample": "O+" }, "primary": { "label": "Name", "sample": "Sara Haddad" },
+      "front": [{ "label": "Contact", "sample": "Omar Haddad" }, { "label": "Phone", "sample": "+33 6 00 00 00 00" }, { "label": "Allergies", "sample": "Penicillin" }],
+      "back": [{ "label": "Medical conditions", "sample": "" }, { "label": "Medication", "sample": "" }, { "label": "Doctor", "sample": "" }],
+      "barcode": "none", "photo": false, "banner": false
+    },
+    {
+      "id": "custom", "name": "Your own design", "group": "Other", "icon": "pass", "kind": "generic",
+      "title": "My pass", "org": "", "colors": { "bg": "#2a5ba8", "fg": "#ffffff", "label": "#cfe0ff" },
+      "header": { "label": "", "sample": "" }, "primary": { "label": "Name", "sample": "" },
+      "front": [{ "label": "", "sample": "" }, { "label": "", "sample": "" }],
+      "back": [],
+      "barcode": "qr", "photo": false, "banner": false
+    }
+  ],
+  "palettes": [
+    { "name": "Navy", "bg": "#1f3b73", "fg": "#ffffff", "label": "#bcd0f5" },
+    { "name": "Midnight", "bg": "#14181f", "fg": "#ffffff", "label": "#d5b757" },
+    { "name": "Emerald", "bg": "#0b6e4f", "fg": "#ffffff", "label": "#ffe08a" },
+    { "name": "Teal", "bg": "#00796b", "fg": "#ffffff", "label": "#c8f1ea" },
+    { "name": "Ocean", "bg": "#0a4fa6", "fg": "#ffffff", "label": "#ffd34d" },
+    { "name": "Plum", "bg": "#3b1d6e", "fg": "#ffffff", "label": "#e2c6ff" },
+    { "name": "Burgundy", "bg": "#7a1f2b", "fg": "#ffffff", "label": "#f6c6cc" },
+    { "name": "Red", "bg": "#b5121b", "fg": "#ffffff", "label": "#ffd6d8" },
+    { "name": "Coral", "bg": "#e8553e", "fg": "#ffffff", "label": "#ffe2d9" },
+    { "name": "Orange", "bg": "#f28c28", "fg": "#ffffff", "label": "#fff0d6" },
+    { "name": "Pink", "bg": "#c2185b", "fg": "#ffffff", "label": "#ffd1e4" },
+    { "name": "Coffee", "bg": "#3e2c23", "fg": "#ffffff", "label": "#e8cfa5" },
+    { "name": "Paper", "bg": "#f4f1ea", "fg": "#1b1f27", "label": "#8a6d3b" },
+    { "name": "White", "bg": "#ffffff", "fg": "#14181f", "label": "#2a5ba8" }
+  ]
+}

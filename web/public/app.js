@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCallBackground, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.5.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.6.0'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -2843,6 +2843,370 @@ function printScreen() {
 
 // ---------- router ----------
 
+// ---------- personal passes (student IDs, travel passes, tickets, memberships…) ----------
+
+let passTemplates = null;
+const loadPassTemplates = () => passTemplates || (passTemplates = fetch('/pass-templates.json').then((r) => r.json()));
+let bwipLoading = null;
+const loadBarcodes = () => bwipLoading || (bwipLoading = loadScript('/vendor/bwip-js.min.js'));
+const MAX_PASSES = 50;
+
+const PASS_KINDS = [['generic', 'Card or ID'], ['event', 'Event ticket'], ['transit', 'Travel ticket (from → to)'], ['store', 'Store or membership card'], ['coupon', 'Coupon']];
+const TRANSIT_TYPES = [['train', 'Train'], ['air', 'Flight'], ['bus', 'Bus or coach'], ['boat', 'Ferry'], ['generic', 'Other']];
+const BARCODES = [['qr', 'QR code'], ['pdf417', 'PDF417'], ['aztec', 'Aztec'], ['code128', 'Code 128'], ['ean13', 'EAN-13'], ['code39', 'Code 39'], ['none', 'No barcode']];
+const BWIP_ID = { qr: 'qrcode', pdf417: 'pdf417', aztec: 'azteccode', code128: 'code128', ean13: 'ean13', code39: 'code39' };
+const PASS_GLYPHS = {
+  school: '<path d="M2 9l10-5 10 5-10 5L2 9z"/><path d="M6 11v5c3 2.5 9 2.5 12 0v-5M22 9v6"/>',
+  book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>',
+  backpack: '<path d="M6 9a6 6 0 0 1 12 0v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9z"/><path d="M9 4V3h6v1M9 14h6v4H9z"/>',
+  badge: '<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c1-2 7-2 8 0"/>',
+  visitor: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  bus: '<rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M7 21v-3M17 21v-3M8 14.5h.01M16 14.5h.01"/>',
+  train: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14M9 21l1.5-4M15 21l-1.5-4M9 13.5h.01M15 13.5h.01"/>',
+  plane: '<path d="M10.5 21l1.5-6 7 2v-2l-7-5V4a1.5 1.5 0 0 0-3 0v6l-7 5v2l7-2 1.5 6"/>',
+  ferry: '<path d="M3 17l2 3h14l2-3H3zM6 17V9h12v8M10 9V5h4v4"/>',
+  car: '<path d="M5 16V11l2-5h10l2 5v5M3 16h18v3H3zM7 13h.01M17 13h.01"/>',
+  ticket: '<path d="M3 8a2 2 0 0 0 0 4v4h18v-4a2 2 0 0 1 0-4V4H3v4z"/><path d="M14 4v12"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z"/>',
+  dumbbell: '<path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12"/>',
+  users: ICONS.users,
+  gift: '<rect x="3" y="8" width="18" height="13" rx="1"/><path d="M12 8v13M3 12h18M12 8c-2-4-6-4-6-1.5S10 8 12 8zM12 8c2-4 6-4 6-1.5S14 8 12 8z"/>',
+  tag: '<path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
+  heart: '<path d="M12 20s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9c0 6-8 11-8 11z"/>',
+  hotel: '<path d="M3 20V5M21 20v-6a3 3 0 0 0-3-3H10v6M3 17h18M6.5 11a1.5 1.5 0 1 0 0-.01"/>',
+  medical: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 7v10M7 12h10"/>',
+  pass: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10h6M7 14h10"/>',
+};
+function passGlyph(name) {
+  const span = document.createElement('span');
+  span.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PASS_GLYPHS[name] || PASS_GLYPHS.pass}</svg>`;
+  return span.firstChild;
+}
+
+const findPass = (id) => (me.passes || []).find((p) => p.id === id) || null;
+const keepPassesOffline = () => { try { localStorage.setItem('mk.passes', JSON.stringify(me.passes || [])); } catch {} };
+
+/** A new pass from a template: labels filled in, values left for the person (the samples show as hints). */
+function passFromTemplate(t) {
+  const pair = (x) => ({ label: (x && x.label) || '', value: '' });
+  return {
+    template: t.id, kind: t.kind, transit: t.transit || 'generic', org: '', title: t.title,
+    header: pair(t.header), primary: pair(t.primary), to: pair(t.to),
+    front: (t.front || []).map(pair), back: (t.back || []).map(pair), notes: '',
+    barcode: { format: t.barcode, value: '', text: '' }, colors: { ...t.colors }, date: '', expires: '',
+    logo: '', photo: '', banner: '',
+  };
+}
+
+/** The barcode as SVG markup (bwip-js), or a short message when the value does not fit that kind of code. */
+async function barcodeSvg(format, value) {
+  if (format === 'none' || !value) return '';
+  await loadBarcodes();
+  const square = ['qr', 'aztec'].includes(format);
+  return window.bwipjs.toSVG({
+    bcid: BWIP_ID[format], text: value, scale: 3,
+    ...(square ? {} : { height: format === 'pdf417' ? 12 : 16 }),
+    ...(['ean13', 'code39', 'code128'].includes(format) ? { includetext: false } : {}),
+  });
+}
+
+function barcodeBox(pass, big = false) {
+  const b = pass.barcode || {};
+  if (b.format === 'none') return null;
+  const holder = h('div', { class: `pass-code ${['qr', 'aztec'].includes(b.format) ? 'square' : 'wide'}${big ? ' big' : ''}` });
+  const art = h('div', { class: 'pass-code-art' });
+  holder.append(art);
+  const under = b.text || (!['qr', 'aztec'].includes(b.format) && b.value);
+  if (under) holder.append(h('small', {}, under));
+  if (!b.value) art.append(h('span', { class: 'muted small' }, 'Barcode appears here'));
+  else {
+    barcodeSvg(b.format, b.value).then((svg) => { art.innerHTML = svg; })
+      .catch((err) => { art.replaceChildren(h('span', { class: 'error small' }, String(err.message || err).replace(/^bwipp\.\w+#?\d*:\s*/, ''))); });
+  }
+  return holder;
+}
+
+/** A look-alike of the pass as it will appear in the wallet. */
+function renderPass(pass, { samples = null, big = false } = {}) {
+  const c = pass.colors || {};
+  const hint = (i, key) => (samples && samples[key] && (i == null ? samples[key].sample : samples[key][i] && samples[key][i].sample)) || '';
+  const field = (x, i, key, cls = '') => {
+    if (!x || !(x.value || hint(i, key))) return null; // empty fields are hidden, as in the wallet
+    return h('div', { class: `pf ${cls}` },
+      h('span', { class: 'pf-label', style: `color:${c.label}` }, (x.label || '').toUpperCase()),
+      h('span', { class: `pf-value${x.value ? '' : ' hint'}`, dir: 'auto' }, x.value || hint(i, key)));
+  };
+  const strip = ['event', 'store', 'coupon'].includes(pass.kind) && pass.banner;
+  const showPhoto = !strip && ['generic', 'event'].includes(pass.kind) && pass.photo;
+  const front = pass.front || [];
+  let main;
+  if (pass.kind === 'transit') {
+    main = h('div', { class: 'pass-route' },
+      field(pass.primary, null, 'primary', 'big'),
+      h('span', { class: 'pass-route-icon', style: `color:${c.label}` }, passGlyph({ air: 'plane', train: 'train', bus: 'bus', boat: 'ferry' }[pass.transit] || 'pass')),
+      field(pass.to, null, 'to', 'big end'));
+  } else {
+    main = h('div', { class: `pass-main${strip ? ' on-strip' : ''}`, style: strip ? `background-image:url("${pass.banner}")` : null },
+      h('div', { class: 'grow' }, field(pass.primary, null, 'primary', 'big')),
+      showPhoto && h('img', { class: 'pass-photo', src: pass.photo, alt: '' }));
+  }
+  return h('div', { class: `pass-face${big ? ' big' : ''}`, style: `background:${c.bg};color:${c.fg}` },
+    h('div', { class: 'pass-top' },
+      pass.logo ? h('img', { class: 'pass-logo', src: pass.logo, alt: '' }) : null,
+      h('span', { class: 'pass-org grow', dir: 'auto' }, pass.org || pass.title || ''),
+      field(pass.header, null, 'header', 'end')),
+    main,
+    front.length ? h('div', { class: 'pass-row' }, ...front.slice(0, 2).map((x, i) => field(x, i, 'front', i ? 'end' : ''))) : null,
+    front.length > 2 ? h('div', { class: 'pass-row' }, ...front.slice(2, 4).map((x, i) => field(x, i + 2, 'front', i ? 'end' : ''))) : null,
+    barcodeBox(pass, big));
+}
+
+function passesScreen() {
+  keepPassesOffline();
+  const list = me.passes || [];
+  const head = h('header', { class: 'page-head' },
+    h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, 'Wallet'), h('h1', {}, 'My passes'),
+      h('p', { class: 'muted' }, 'Student and staff IDs, travel passes, tickets, memberships and loyalty cards, all in one place and in your phone’s wallet.')),
+    h('div', { class: 'head-actions' }, list.length < MAX_PASSES && h('a', { class: 'btn primary', href: '/passes/new' }, icon('plus'), 'Add pass')));
+  const grid = h('div', { class: 'pass-grid' }, ...list.map((p) => h('a', { class: 'pass-tile', href: `/passes/${p.id}`, 'aria-label': p.title }, renderPass({ ...p, barcode: { format: 'none' } }))));
+  grid.append(h('a', { class: 'tile tile-new pass-new', href: '/passes/new' },
+    h('span', { class: 'tile-plus' }, icon('plus')), h('strong', {}, list.length ? 'Add a pass' : 'Add your first pass'),
+    h('span', { class: 'muted small' }, 'Pick a template or design your own')));
+  return h('div', { class: 'stack wide-stack' }, head, grid);
+}
+
+function passTemplatesScreen() {
+  if ((me.passes || []).length >= MAX_PASSES) return missingScreen(`You can have up to ${MAX_PASSES} passes. Delete one to add another.`, 'Pass limit reached');
+  const body = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Loading templates…'));
+  loadPassTemplates().then((data) => {
+    body.replaceChildren(...data.groups.map((group) => {
+      const items = data.templates.filter((t) => t.group === group);
+      return items.length && h('section', { class: 'stack' }, h('h2', { class: 'section-title' }, group),
+        h('div', { class: 'template-grid' }, ...items.map((t) => h('a', { class: 'template-tile', href: `/passes/new/${t.id}` },
+          h('span', { class: 'template-swatch', style: `background:${t.colors.bg};color:${t.colors.fg}` }, passGlyph(t.icon)),
+          h('span', { class: 'stack tight' }, h('strong', {}, t.name),
+            h('span', { class: 'muted small' }, PASS_KINDS.find(([k]) => k === t.kind)[1]))))));
+    }).filter(Boolean));
+  }).catch(() => body.replaceChildren(h('p', { class: 'error' }, 'Templates could not be loaded. Check your connection.')));
+  return h('div', { class: 'stack wide-stack' },
+    h('header', { class: 'page-head' }, h('a', { class: 'btn icon', href: '/passes', 'aria-label': 'Back' }, icon('back')),
+      h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, 'New pass'), h('h1', {}, 'Choose a template'),
+        h('p', { class: 'muted' }, 'Every template can be changed completely: colours, fields, pictures and barcode.'))),
+    body);
+}
+
+// Pictures for a pass are PNG (Apple Wallet needs it), sized for the wallet at @3x.
+async function passPicture(file, kind) {
+  const img = await loadImage(URL.createObjectURL(file));
+  const [w, hgt, cover] = { logo: [480, 150, false], photo: [270, 330, true], banner: [750, 246, true] }[kind];
+  let cw = w, ch = hgt;
+  const scale = cover ? Math.max(w / img.naturalWidth, hgt / img.naturalHeight) : Math.min(w / img.naturalWidth, hgt / img.naturalHeight, 1);
+  const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+  if (!cover) { cw = Math.round(dw); ch = Math.round(dh); }
+  const canvas = Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+  canvas.getContext('2d').drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+  URL.revokeObjectURL(img.src);
+  return canvas.toDataURL('image/png');
+}
+
+// Reads a barcode from the camera or a photo, where the browser can (Chrome on Android, Safari 17+ …).
+async function scanBarcodeSheet(onFound) {
+  if (!('BarcodeDetector' in window)) {
+    toast('This browser cannot read barcodes. Type the number printed under the barcode instead, or use the MK Cards app.');
+    return;
+  }
+  const detector = new window.BarcodeDetector();
+  const formatOf = { qr_code: 'qr', pdf417: 'pdf417', aztec: 'aztec', code_128: 'code128', ean_13: 'ean13', code_39: 'code39' };
+  let stream = null, timer = null;
+  sheet((close) => {
+    const video = h('video', { class: 'scan-video', playsinline: true, muted: true, autoplay: true });
+    const finish = (code) => { clearInterval(timer); if (stream) stream.getTracks().forEach((t) => t.stop()); close(); onFound(code); };
+    const fromFile = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const found = await detector.detect(await createImageBitmap(file)).catch(() => []);
+      if (found[0]) finish({ value: found[0].rawValue, format: formatOf[found[0].format] || 'code128' });
+      else toast('No barcode found in that picture.');
+    } });
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then((s) => {
+      stream = s; video.srcObject = s;
+      timer = setInterval(async () => {
+        const found = await detector.detect(video).catch(() => []);
+        if (found[0]) finish({ value: found[0].rawValue, format: formatOf[found[0].format] || 'code128' });
+      }, 350);
+    }).catch(() => toast('The camera is not available. Choose a photo of the barcode instead.'));
+    return [h('h1', {}, 'Scan the barcode'), h('p', { class: 'muted' }, 'Point the camera at the barcode on your card or ticket.'), video, fromFile,
+      h('div', { class: 'row' }, h('button', { class: 'btn grow', onclick: () => fromFile.click() }, icon('upload'), 'Choose a photo'),
+        h('button', { class: 'btn grow', onclick: () => { clearInterval(timer); if (stream) stream.getTracks().forEach((t) => t.stop()); close(); } }, 'Cancel'))];
+  });
+}
+
+function passEditorScreen(id, templateId) {
+  const existing = id && id !== 'new' ? findPass(id) : null;
+  if (id && id !== 'new' && !existing) return missingScreen('That pass is not in your account.', 'Pass not found');
+  const holder = h('div', { class: 'stack wide-stack' }, h('p', { class: 'muted' }, 'Loading…'));
+  loadPassTemplates().then((data) => {
+    const t = data.templates.find((x) => x.id === (existing ? existing.template : templateId)) || data.templates.find((x) => x.id === 'custom');
+    if (!existing && !data.templates.some((x) => x.id === templateId)) { go('/passes/new'); return; }
+    holder.replaceChildren(...passEditor(existing ? JSON.parse(JSON.stringify(existing)) : passFromTemplate(t), t, data.palettes, existing));
+  }).catch(() => holder.replaceChildren(h('p', { class: 'error' }, 'Could not load the pass editor. Check your connection.')));
+  return holder;
+}
+
+function passEditor(pass, t, palettes, existing) {
+  let dirty = false;
+  window.onbeforeunload = () => (dirty ? true : undefined);
+  const preview = h('div', { class: 'pass-preview' });
+  const samples = { header: t.header, primary: t.primary, to: t.to, front: t.front };
+  const refresh = () => { dirty = true; preview.replaceChildren(renderPass(pass, { samples })); };
+  const sample = (x) => (x && x.sample) || '';
+  const textField = (label, get, set, attrs = {}) => h('label', { class: 'field' }, h('span', {}, label),
+    h(attrs.rows ? 'textarea' : 'input', { class: 'input', value: get(), dir: 'auto', ...attrs, oninput: (e) => { set(e.target.value); refresh(); } }));
+  const pairRow = (obj, hint, { labelText = 'Label', valueText = 'Value', remove } = {}) => h('div', { class: 'pair-row' },
+    h('input', { class: 'input', value: obj.label, maxlength: 30, placeholder: labelText, 'aria-label': labelText, oninput: (e) => { obj.label = e.target.value; refresh(); } }),
+    h('input', { class: 'input grow', value: obj.value, maxlength: 80, dir: 'auto', placeholder: sample(hint) || valueText, 'aria-label': valueText, oninput: (e) => { obj.value = e.target.value; refresh(); } }),
+    remove && h('button', { class: 'btn small icon-only', type: 'button', 'aria-label': 'Remove', onclick: remove }, icon('x')));
+
+  const select = (label, options, get, set) => h('label', { class: 'field' }, h('span', {}, label),
+    h('select', { class: 'input', onchange: (e) => { set(e.target.value); refresh(); draw(); } },
+      ...options.map(([v, l]) => h('option', { value: v, selected: get() === v }, l))));
+
+  const pictureRow = (kind, label, hint) => {
+    const input = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try { pass[kind] = await passPicture(file, kind); refresh(); draw(); } catch (err) { toast(err.message); }
+    } });
+    return h('div', { class: 'picture-row' }, input,
+      pass[kind] ? h('img', { class: `pic-thumb ${kind}`, src: pass[kind], alt: '' }) : h('span', { class: `pic-thumb empty ${kind}` }, icon('upload')),
+      h('div', { class: 'grow stack tight' }, h('strong', {}, label), h('span', { class: 'muted small' }, hint)),
+      h('button', { class: 'btn small', type: 'button', onclick: () => input.click() }, pass[kind] ? 'Change' : 'Add'),
+      pass[kind] && h('button', { class: 'btn small danger', type: 'button', onclick: () => { pass[kind] = ''; refresh(); draw(); } }, 'Remove'));
+  };
+
+  const form = h('div', { class: 'stack' });
+  const errorLine = h('p', { class: 'error', role: 'alert', hidden: true });
+  const draw = () => {
+    const isTransit = pass.kind === 'transit';
+    const front = h('div', { class: 'stack tight' }, ...pass.front.map((f, i) => pairRow(f, t.front[i], { remove: () => { pass.front.splice(i, 1); refresh(); draw(); } })),
+      pass.front.length < 4 && h('button', { class: 'btn small', type: 'button', onclick: () => { pass.front.push({ label: '', value: '' }); refresh(); draw(); } }, icon('plus'), 'Add a field'));
+    const back = h('div', { class: 'stack tight' }, ...pass.back.map((f, i) => pairRow(f, t.back[i], { remove: () => { pass.back.splice(i, 1); refresh(); draw(); } })),
+      pass.back.length < 12 && h('button', { class: 'btn small', type: 'button', onclick: () => { pass.back.push({ label: '', value: '' }); refresh(); draw(); } }, icon('plus'), 'Add a detail'));
+    const swatches = h('div', { class: 'pass-palettes' }, ...palettes.map((p) => h('button', {
+      type: 'button', class: 'pass-palette', title: p.name, 'aria-label': p.name, 'aria-pressed': String(pass.colors.bg === p.bg),
+      style: `background:${p.bg};color:${p.label}`, onclick: () => { pass.colors = { bg: p.bg, fg: p.fg, label: p.label }; refresh(); draw(); },
+    }, 'Aa')));
+    const colour = (label, key) => h('label', { class: 'field colour-field' }, h('span', {}, label),
+      h('input', { type: 'color', value: pass.colors[key], oninput: (e) => { pass.colors[key] = e.target.value; refresh(); } }));
+    form.replaceChildren(
+      h('section', { class: 'glass panel stack' }, h('h2', {}, 'Type and name'),
+        h('div', { class: 'grid2' }, select('Layout', PASS_KINDS, () => pass.kind, (v) => { pass.kind = v; }),
+          isTransit ? select('Travelling by', TRANSIT_TYPES, () => pass.transit, (v) => { pass.transit = v; }) : h('span')),
+        h('div', { class: 'grid2' },
+          textField('Organisation (top of the pass)', () => pass.org, (v) => { pass.org = v; }, { maxlength: 40, placeholder: t.org || 'e.g. City University' }),
+          textField('Pass name', () => pass.title, (v) => { pass.title = v; }, { maxlength: 40, placeholder: 'e.g. Student ID' }))),
+      h('section', { class: 'glass panel stack' }, h('h2', {}, 'On the front'),
+        h('p', { class: 'muted small' }, 'Labels are in grey; your details go on the right. Leave any field empty to hide it.'),
+        h('span', { class: 'small strong' }, 'Top corner'), pairRow(pass.header, t.header),
+        h('span', { class: 'small strong' }, isTransit ? 'From' : 'Main line'), pairRow(pass.primary, t.primary, isTransit ? { labelText: 'City', valueText: 'Code' } : {}),
+        isTransit && h('span', { class: 'small strong' }, 'To'), isTransit && pairRow(pass.to, t.to, { labelText: 'City', valueText: 'Code' }),
+        h('span', { class: 'small strong' }, 'More fields (up to 4)'), front),
+      h('section', { class: 'glass panel stack' }, h('h2', {}, 'Barcode'),
+        h('div', { class: 'grid2' }, select('Kind', BARCODES, () => pass.barcode.format, (v) => { pass.barcode.format = v; }),
+          textField('Text under the code (optional)', () => pass.barcode.text, (v) => { pass.barcode.text = v; }, { maxlength: 40 })),
+        pass.barcode.format !== 'none' && h('div', { class: 'row wrap' },
+          h('label', { class: 'field grow' }, h('span', {}, 'What the code holds'),
+            h('input', { class: 'input', value: pass.barcode.value, maxlength: 500, placeholder: pass.barcode.format === 'ean13' ? '12 or 13 digits' : 'e.g. your card or ticket number',
+              oninput: (e) => { pass.barcode.value = e.target.value; refresh(); } })),
+          h('button', { class: 'btn', type: 'button', onclick: () => scanBarcodeSheet((code) => { pass.barcode.value = code.value; pass.barcode.format = code.format; refresh(); draw(); }) }, icon('scan'), 'Scan from my card')),
+        ['ean13', 'code39'].includes(pass.barcode.format) && h('p', { class: 'muted small' }, 'Apple Wallet shows this number as a Code 128 barcode, which shop scanners also read.')),
+      h('section', { class: 'glass panel stack' }, h('h2', {}, 'Colours'), swatches,
+        h('div', { class: 'grid3' }, colour('Background', 'bg'), colour('Text', 'fg'), colour('Labels', 'label'))),
+      h('section', { class: 'glass panel stack' }, h('h2', {}, 'Pictures'),
+        pictureRow('logo', 'Logo', 'Shown at the top left. A wide logo on a clear background works best.'),
+        ['generic', 'event'].includes(pass.kind) && pictureRow('photo', 'Photo', 'e.g. your ID photo, shown beside your name.'),
+        ['event', 'store', 'coupon'].includes(pass.kind) && pictureRow('banner', 'Banner', 'A wide picture across the pass, behind the main line.')),
+      h('section', { class: 'glass panel stack' }, h('h2', {}, 'Dates'),
+        h('div', { class: 'grid2' },
+          textField('Date and time (shown on the lock screen near the time)', () => (pass.date ? new Date(new Date(pass.date).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''),
+            (v) => { pass.date = v ? new Date(v).toISOString() : ''; }, { type: 'datetime-local' }),
+          textField('Valid until (greyed out after this day)', () => pass.expires, (v) => { pass.expires = v; }, { type: 'date' }))),
+      h('section', { class: 'glass panel stack' }, h('h2', {}, 'On the back'), back,
+        textField('Notes', () => pass.notes, (v) => { pass.notes = v; }, { rows: 3, maxlength: 600 })),
+      h('p', { class: 'muted small' }, 'Passes you make are personal copies for convenience. They are not official documents; carry the original where one is required.'),
+      errorLine,
+      h('div', { class: 'row' },
+        h('a', { class: 'btn', href: existing ? `/passes/${existing.id}` : '/passes' }, 'Cancel'),
+        h('button', { class: 'btn primary grow', onclick: save }, icon('check'), existing ? 'Save changes' : 'Create pass')));
+  };
+  async function save(e) {
+    const button = e.currentTarget;
+    errorLine.hidden = true;
+    button.disabled = true;
+    try {
+      const body = { pass };
+      const res = existing ? await api(`/passes/${existing.id}`, { method: 'PUT', body }) : await api('/passes', { method: 'POST', body });
+      me.passes = [...(me.passes || []).filter((p) => p.id !== res.pass.id), res.pass];
+      keepPassesOffline();
+      dirty = false;
+      go(`/passes/${res.pass.id}`);
+      toast(existing ? 'Pass saved' : 'Pass created');
+    } catch (err) {
+      errorLine.textContent = err.message;
+      errorLine.hidden = false;
+    } finally { button.disabled = false; }
+  }
+  draw();
+  preview.replaceChildren(renderPass(pass, { samples }));
+  return [
+    h('header', { class: 'page-head' }, h('a', { class: 'btn icon', href: existing ? `/passes/${existing.id}` : '/passes/new', 'aria-label': 'Back' }, icon('back')),
+      h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, existing ? 'Edit pass' : `New pass · ${t.name}`), h('h1', {}, existing ? pass.title : t.name))),
+    h('div', { class: 'pass-editor' }, form, h('aside', { class: 'pass-aside' }, h('div', { class: 'sticky stack' }, h('p', { class: 'eyebrow' }, 'Preview'), preview,
+      h('p', { class: 'muted small' }, 'Grey text shows examples until you fill in your own.')))),
+  ];
+}
+
+function passWalletButtons(p) {
+  const ready = me.wallet || {};
+  const inAndroidApp = Boolean(native) && isAndroid;
+  const inIPhoneApp = Boolean(native) && !isAndroid;
+  const apple = ready.apple && !inAndroidApp && walletButton(`/api/passes/${p.id}/wallet/apple.pkpass`, 'Apple Wallet', 'apple');
+  const google = ready.google && !inIPhoneApp && walletButton(`/api/passes/${p.id}/wallet/google`, 'Google Wallet', 'google');
+  const list = (isApple ? [apple, google] : [google, apple]).filter(Boolean);
+  return list.length ? h('div', { class: 'wallet-row' }, ...list) : null;
+}
+
+function passScreen(id) {
+  const p = findPass(id);
+  if (!p) return missingScreen('That pass is not in your account.', 'Pass not found');
+  const back = [...p.back.filter((f) => f.value), ...(p.notes ? [{ label: 'Notes', value: p.notes }] : [])];
+  const remove = () => sheet((close) => [
+    h('h1', {}, 'Delete this pass?'),
+    h('p', { class: 'muted' }, 'It is removed from MK Cards. A copy already added to Apple Wallet or Google Wallet stays there until you remove it in the wallet.'),
+    h('div', { class: 'row' }, h('button', { class: 'btn grow', onclick: close }, 'Keep'),
+      h('button', { class: 'btn danger grow', onclick: async () => {
+        try {
+          await api(`/passes/${p.id}`, { method: 'DELETE' });
+          me.passes = me.passes.filter((x) => x.id !== p.id);
+          keepPassesOffline();
+          close(); go('/passes'); toast('Pass deleted');
+        } catch (err) { toast(err.message); }
+      } }, icon('trash'), 'Delete')),
+  ]);
+  return h('div', { class: 'stack pass-show' },
+    h('header', { class: 'page-head' }, h('a', { class: 'btn icon', href: '/passes', 'aria-label': 'Back' }, icon('back')),
+      h('div', { class: 'grow' }, h('p', { class: 'eyebrow' }, p.org || 'Pass'), h('h1', {}, p.title))),
+    renderPass(p, { big: true }),
+    passWalletButtons(p),
+    back.length ? h('section', { class: 'glass panel stack' }, h('h2', {}, 'Details'),
+      h('dl', { class: 'pass-back' }, ...back.flatMap((f) => [h('dt', {}, f.label), h('dd', { dir: 'auto' }, f.value)]))) : null,
+    h('div', { class: 'row' },
+      h('a', { class: 'btn grow', href: `/passes/${p.id}/edit` }, icon('edit'), 'Edit'),
+      h('button', { class: 'btn danger grow', onclick: remove }, icon('trash'), 'Delete')));
+}
+
 const safePath = (p) => (typeof p === 'string' && /^\/(?!\/)/.test(p) ? p : '/');
 
 // [pattern, screen, tab, who]: who is 'user' (must be logged in), 'guest' (logged out only) or null (anyone).
@@ -2859,6 +3223,11 @@ const routes = [
   [/^\/admin$/, adminScreen, 'admin', 'user'],
   [/^\/admin\/design$/, designScreen, 'admin', 'user'],
   [/^\/admin\/print$/, printScreen, 'admin', 'user'],
+  [/^\/passes$/, passesScreen, 'passes', 'user'],
+  [/^\/passes\/new$/, passTemplatesScreen, 'passes', 'user'],
+  [/^\/passes\/new\/([a-z0-9-]+)$/, (t) => passEditorScreen('new', t), 'passes', 'user'],
+  [/^\/passes\/([a-z0-9]{12})\/edit$/, (id) => passEditorScreen(id), 'passes', 'user'],
+  [/^\/passes\/([a-z0-9]{12})$/, passScreen, 'passes', 'user'],
   [/^\/contacts$/, contactsScreen, 'contacts', 'user'],
   [/^\/scan$/, scanScreen, 'contacts', 'user'],
   [/^\/signature\/([a-z0-9]+)$/, signatureScreen, 'home', 'user'],
@@ -2899,7 +3268,7 @@ function render() {
   }
   app.replaceChildren(screen);
   // The top navigation is for people who are logged in; card pages and visitors get a clean page.
-  document.body.classList.toggle('wide', tab === 'home' || tab === 'admin' || tab === 'contacts');
+  document.body.classList.toggle('wide', tab === 'home' || tab === 'admin' || tab === 'contacts' || tab === 'passes');
   document.body.classList.toggle('in-app', inAppTabs);
   tabbar.hidden = !me.user || tab === null || inAppTabs;
   flashFromUrl();
@@ -2909,7 +3278,7 @@ function render() {
     tabbar.replaceChildren(h('nav', { class: 'topnav-inner glass', 'aria-label': 'Main' },
       h('a', { class: 'brand', href: '/' }, logo(), h('span', {}, 'MK Cards')),
       h('div', { class: 'topnav-links' },
-        ...[['home', '/', 'My cards'], ['contacts', '/contacts', 'Contacts'], ['account', '/account', 'Account'], ['admin', '/admin', adminLabel]]
+        ...[['home', '/', 'My cards'], ['passes', '/passes', 'Passes'], ['contacts', '/contacts', 'Contacts'], ['account', '/account', 'Account'], ['admin', '/admin', adminLabel]]
           .map(([name, href, label]) => h('a', { href, 'aria-current': tab === name || (name === 'home' && tab === 'new') ? 'page' : null }, label))),
       h('a', { class: 'topnav-avatar', href: '/account', title: me.user.username, 'aria-label': 'Account' }, initials(main ? main.card.name : me.user.username))));
   }

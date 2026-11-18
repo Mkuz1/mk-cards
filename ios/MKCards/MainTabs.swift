@@ -22,9 +22,9 @@ struct MainTabs: View {
             ShareCardView()
                 .tabItem { Label("Share", systemImage: "qrcode") }
                 .tag(Tab.share)
-            ScanView()
-                .tabItem { Label("Scan", systemImage: "viewfinder") }
-                .tag(Tab.scan)
+            PassesView()
+                .tabItem { Label("Passes", systemImage: "wallet.pass") }
+                .tag(Tab.passes)
             ContactsView()
                 .tabItem { Label("Contacts", systemImage: "person.2") }
                 .tag(Tab.contacts)
@@ -33,6 +33,11 @@ struct MainTabs: View {
                 .tag(Tab.account)
         }
         .tint(Theme.navy)
+        // Scanning cards and badges opens over any tab (from Cards and Contacts).
+        .sheet(isPresented: $model.showScan) { ScanView() }
+        .onChange(of: model.tab) { tab in
+            if tab == .scan { model.tab = .contacts; model.showScan = true }
+        }
     }
 }
 

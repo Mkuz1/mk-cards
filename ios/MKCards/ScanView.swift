@@ -16,6 +16,7 @@ struct ContactDraft: Identifiable {
 /// live QR scanner for badges, or typing someone in.
 struct ScanView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("scanEvent") private var event = ""
     @State private var draft: ContactDraft?
     @State private var reading = false
@@ -46,6 +47,7 @@ struct ScanView: View {
             }
             .background(Theme.page.ignoresSafeArea())
             .navigationTitle("Scan")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .overlay {
                 if reading {
                     VStack(spacing: 12) {

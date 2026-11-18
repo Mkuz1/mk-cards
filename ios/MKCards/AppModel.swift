@@ -55,6 +55,7 @@ struct Me: Decodable {
     }
     let user: User?
     let cards: [Entry]
+    let passes: [Pass]?
     let wallet: Wallet?
     let sso: SSO?
 }
@@ -110,13 +111,14 @@ struct CardStats: Decodable {
 }
 
 enum Tab: Hashable {
-    case cards, share, scan, contacts, account
+    case cards, share, scan, passes, contacts, account
 
     var path: String {
         switch self {
         case .cards: return "/"
         case .share: return "/"
         case .scan: return "/scan"
+        case .passes: return "/passes"
         case .contacts: return "/contacts"
         case .account: return "/account"
         }
@@ -154,6 +156,8 @@ final class AppModel: ObservableObject {
     @Published var busy = false
     /// A page a web tab should open next (for example /new after creating an account).
     @Published var openPath: PageRequest?
+    /// Shows the scanner (cards, badges, typing someone in) over the current tab.
+    @Published var showScan = false
     /// The card shown on the Share tab.
     @Published var shareCardId: String?
     /// True while the server cannot be reached; screens then show the copy saved on the phone.

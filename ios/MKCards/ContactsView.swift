@@ -45,7 +45,7 @@ struct ContactsView: View {
                             Text("No contacts yet").font(.headline)
                             Text("Scan business cards and badges, or let visitors share their details on your card page.")
                                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                            Button("Scan a card") { model.tab = .scan }.buttonStyle(PrimaryButtonStyle()).padding(.top, 6)
+                            Button("Scan a card") { model.showScan = true }.buttonStyle(PrimaryButtonStyle()).padding(.top, 6)
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 24)
                         .listRowBackground(Color.clear)
@@ -77,7 +77,7 @@ struct ContactsView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button { model.tab = .scan } label: { Label("Scan a card", systemImage: "viewfinder") }
+                        Button { model.showScan = true } label: { Label("Scan a card", systemImage: "viewfinder") }
                         Button { Task { await exportCSV() } } label: { Label("Export as spreadsheet (CSV)", systemImage: "square.and.arrow.up") }
                     } label: { Image(systemName: "ellipsis.circle").font(.title3) }
                 }

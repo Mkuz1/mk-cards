@@ -192,7 +192,7 @@ fun MainTabs(state: AppState, activity: MainActivity) {
         containerColor = MK.page,
         bottomBar = {
             NavigationBar(containerColor = Color.White) {
-                listOf(Tab.Cards to MKIcons.cards, Tab.Share to MKIcons.qr, Tab.Scan to MKIcons.scan, Tab.Contacts to MKIcons.people, Tab.Account to MKIcons.account)
+                listOf(Tab.Cards to MKIcons.cards, Tab.Share to MKIcons.qr, Tab.Passes to MKIcons.pass, Tab.Contacts to MKIcons.people, Tab.Account to MKIcons.account)
                     .forEach { (tab, icon) ->
                         NavigationBarItem(selected = state.tab == tab, onClick = { state.tab = tab }, icon = { Icon(icon, null) },
                             label = { Text(tab.name) },
@@ -206,7 +206,12 @@ fun MainTabs(state: AppState, activity: MainActivity) {
             when (state.tab) {
                 Tab.Cards -> CardsScreen(state, activity)
                 Tab.Share -> ShareScreen(state, activity)
-                Tab.Scan -> ScanScreen(state, activity)
+                Tab.Passes -> PassesScreen(state, activity)
+                Tab.Scan -> {
+                    // Scanning opens from Cards or Contacts; Back returns to Contacts.
+                    BackHandler { state.tab = Tab.Contacts }
+                    ScanScreen(state, activity)
+                }
                 Tab.Contacts -> ContactsScreen(state, activity)
                 Tab.Account -> AccountScreen(state, activity)
             }
@@ -244,6 +249,7 @@ fun CardsScreen(state: AppState, activity: MainActivity) {
     val cards = state.me?.cards.orEmpty()
     Column {
         Header("My Cards") {
+            IconButton(onClick = { state.tab = Tab.Scan }) { Icon(MKIcons.scan, "Scan a card", tint = MK.navy) }
             if (cards.size < 10) IconButton(onClick = { WebActivity.open(activity, "New card", "/new", listOf("/share/")) }) { Icon(MKIcons.plus, "New card", tint = MK.navy) }
         }
         LazyColumn(contentPadding = PaddingValues(20.dp, 4.dp, 20.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -398,9 +404,35 @@ fun ShareScreen(state: AppState, activity: MainActivity) {
                 state.message = "Link copied"
             }
             if (state.me?.googleWallet == true) MKButton("Add to Google Wallet") { activity.addToGoogleWallet(card.id) }
-            if (android.nfc.NfcAdapter.getDefaultAdapter(activity) != null) MKButton("Write to an NFC tag", light = true) { activity.writeNfc(link) }
+            if (android.nfc.NfcAdapter.getDefaultAdapter(activity) != null) {
+                TapShareRow(activity, link)
+                MKButton("Write to an NFC tag", light = true) { activity.writeNfc(link) }
+            }
             Text("Anyone can scan the code with their phone camera to open your card and save your contact. It works without internet on your side.",
                 color = MK.muted, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp))
         }
+    }
+}
+
+/** Share by tapping phones: this phone answers like an NFC tag holding the card's link (Host Card Emulation). */
+@Composable
+private fun TapShareRow(activity: MainActivity, link: String) {
+    val canEmulate = remember { activity.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_NFC_HOST_CARD_EMULATION) }
+    if (!canEmulate) return
+    var on by remember { mutableStateOf(TapShare.isOn(activity)) }
+    // The link follows the card chosen above.
+    LaunchedEffect(link, on) { if (on) TapShare.setLink(activity, link) }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Share by tapping phones", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text("Hold the back of your phone to another phone: your card opens on it. Your screen must be on.", color = MK.muted, fontSize = 13.sp)
+        }
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = {
+            on = it
+            TapShare.set(activity, it, link)
+        })
     }
 }

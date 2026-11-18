@@ -1,0 +1,1 @@
+bwip-js 4.11.4 — MIT licence, Copyright (c) 2011-2024 Mark Warren; BWIPP — MIT licence, Copyright (c) 2004-2024 Terry Burton.

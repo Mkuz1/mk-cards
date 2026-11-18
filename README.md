@@ -254,3 +254,28 @@ One printed-card design per company; every member's card uses it.
   Arabic joins correctly. Built-in fonts are subsets of Inter, Noto Serif, Noto Kufi Arabic and Noto Naskh Arabic
   (`web/public/print/fonts/`, OFL; see `LICENSES.txt`). The QR code is vector. Code: `web/public/print-engine.js`,
   API `/api/print*` in `web/src/index.js`.
+
+## Passes (v2.6)
+
+Anyone can make their own passes: student and staff IDs, travel passes, train, coach, ferry and boarding passes, event
+tickets, memberships, loyalty and gift cards, coupons, insurance, hotel bookings and more.
+
+- **Templates**: `web/public/pass-templates.json` (23 templates and 14 colour sets). `npm run build` / `scripts/build-assets.mjs`
+  copies the same file into the iPhone app (`ios/MKCards/`) and the Android app (`android/app/src/main/assets/`).
+- **Editor** on the site (`/passes`, `/passes/new`), in the iPhone app and in the Android app (Passes tab): layout (card,
+  event ticket, travel ticket from → to, store card, coupon), organisation, fields, barcode (QR, PDF417, Aztec, Code 128,
+  EAN-13, Code 39 — or scan the one on the real card), colours, logo, photo, banner, dates and details on the back.
+- **Wallets**: `GET /api/passes/:id/wallet/apple.pkpass` (signed with the same Pass Type ID as the cards) and
+  `GET /api/passes/:id/wallet/google` (generic pass, class `mkcards_personal_pass`). Apple Wallet has no EAN-13 or Code 39,
+  so those are sent as Code 128 with the same number.
+- **API**: `GET/POST /api/passes`, `PUT/DELETE /api/passes/:id`; passes also come with `GET /api/me`, so the apps keep them
+  offline. Barcodes are drawn on the device (bwip-js on the site, Core Image on iPhone, ZXing on Android).
+- Passes are personal copies, not official documents; the editor and the pass say so.
+
+## Share by tapping phones (Android)
+
+Share tab › "Share by tapping phones". The phone then answers NFC readers like an NFC Forum Type 4 tag holding the
+card's link (`TapShare.kt`, Host Card Emulation, AID `D2760000850101`), so another phone that touches it opens the card.
+It works while the screen is on. iPhones cannot do this: Apple keeps iPhone-to-iPhone tapping to its own NameDrop, and
+its card-emulation access is only for payments, transit and access badges. iPhone users share with the QR code, AirDrop,
+or an NFC sticker written from the app; iPhones (XS and later) can *read* an Android phone's tap-share.

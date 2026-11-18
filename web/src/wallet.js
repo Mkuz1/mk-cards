@@ -53,6 +53,8 @@ function hueOf(c) {
 
 /** The pass colours, the same rules as the card page: a deep shade of the card's colour, white text, and a fine
  * highlight (gold, or silver when the card's colour is itself warm) for the small labels. */
+export const googleIssuer = (env) => String(env.GOOGLE_WALLET_ISSUER_ID || '').trim();
+
 export function passColours(card) {
   const accent = /^#[0-9a-f]{6}$/i.test(card.accent || '') ? card.accent : '#2a5ba8';
   // The pass background is the card's mid-tone glass colour, so it reads as the same object as the card page.
@@ -71,7 +73,7 @@ const asset = (path) => Uint8Array.from(atob(ASSETS[path].base64), (ch) => ch.ch
 
 /** Builds a signed .pkpass file: a clean business card with no photo, the company at the top and
  * "MK Cards" in small print under the QR code. */
-export async function applePass(env, { cardId, card, link, strip, logo }) {
+function appleSigner(env) {
   const cert = forge.pki.certificateFromPem(pem(env.APPLE_PASS_CERT));
   const key = forge.pki.privateKeyFromPem(pem(env.APPLE_PASS_KEY));
   // The certificate itself names the pass type (UID) and the developer team (OU).
@@ -79,6 +81,33 @@ export async function applePass(env, { cardId, card, link, strip, logo }) {
   const passTypeIdentifier = attr('0.9.2342.19200300.100.1.1'); // UID
   const teamIdentifier = attr('2.5.4.11'); // OU
   if (!passTypeIdentifier || !teamIdentifier) throw new Error('The Apple certificate is not a Pass Type ID certificate.');
+  return { cert, key, passTypeIdentifier, teamIdentifier };
+}
+
+/** Signs pass.json plus its pictures (name → PNG bytes; the MK Cards icon is added) into a .pkpass file. */
+export async function packApplePass(env, pass, images = {}) {
+  const { cert, key, passTypeIdentifier, teamIdentifier } = appleSigner(env);
+  const enc = new TextEncoder();
+  const files = {
+    'pass.json': enc.encode(JSON.stringify({ ...pass, passTypeIdentifier, teamIdentifier })),
+    'icon.png': asset('/wallet/icon.png'),
+    'icon@2x.png': asset('/wallet/icon@2x.png'),
+    'icon@3x.png': asset('/wallet/icon@3x.png'),
+  };
+  for (const [name, bytes] of Object.entries(images)) {
+    if (bytes) for (const scale of ['', '@2x', '@3x']) files[`${name}${scale}.png`] = bytes;
+  }
+  const manifest = {};
+  for (const [name, data] of Object.entries(files)) {
+    manifest[name] = [...new Uint8Array(await crypto.subtle.digest('SHA-1', data))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  const manifestText = JSON.stringify(manifest);
+  files['manifest.json'] = enc.encode(manifestText);
+  files.signature = sign(manifestText, cert, key);
+  return zip(files);
+}
+
+export async function applePass(env, { cardId, card, link, strip, logo }) {
 
   const colours = passColours(card);
   const phones = card.phones || [];
@@ -113,8 +142,6 @@ export async function applePass(env, { cardId, card, link, strip, logo }) {
   const barcode = { format: 'PKBarcodeFormatQR', message: vcard, messageEncoding: 'utf-8', altText: 'MK Cards' };
   const pass = {
     formatVersion: 1,
-    passTypeIdentifier,
-    teamIdentifier,
     serialNumber: `mkcards-${cardId}`,
     organizationName: card.company || 'MK Cards',
     description: `${card.name} — business card`,
@@ -134,24 +161,7 @@ export async function applePass(env, { cardId, card, link, strip, logo }) {
     barcode,
   };
 
-  const enc = new TextEncoder();
-  const files = {
-    'pass.json': enc.encode(JSON.stringify(pass)),
-    'icon.png': asset('/wallet/icon.png'),
-    'icon@2x.png': asset('/wallet/icon@2x.png'),
-    'icon@3x.png': asset('/wallet/icon@3x.png'),
-  };
-  if (strip) for (const name of ['strip.png', 'strip@2x.png', 'strip@3x.png']) files[name] = strip;
-  if (logo) for (const name of ['logo.png', 'logo@2x.png', 'logo@3x.png']) files[name] = logo;
-
-  const manifest = {};
-  for (const [name, data] of Object.entries(files)) {
-    manifest[name] = [...new Uint8Array(await crypto.subtle.digest('SHA-1', data))].map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
-  const manifestText = JSON.stringify(manifest);
-  files['manifest.json'] = enc.encode(manifestText);
-  files.signature = sign(manifestText, cert, key);
-  return zip(files);
+  return packApplePass(env, pass, { strip, logo });
 }
 
 // A detached PKCS #7 signature of the manifest, carrying the pass certificate and Apple's intermediate.
@@ -238,10 +248,13 @@ function googleObject(issuer, { cardId, card, link, origin, hero, logo }) {
  * Google Wallet API so the saved copy shows the card's latest details.
  */
 export async function googleSaveUrl(env, details) {
-  const keyFile = JSON.parse(env.GOOGLE_WALLET_KEY);
   const issuer = String(env.GOOGLE_WALLET_ISSUER_ID).trim();
-  const walletClass = googleClass(issuer);
-  const object = googleObject(issuer, details);
+  return googleSaveGeneric(env, googleClass(issuer), googleObject(issuer, details), details);
+}
+
+/** Stores (or updates) a generic pass at Google and returns its "Save to Google Wallet" address. */
+export async function googleSaveGeneric(env, walletClass, object, details) {
+  const keyFile = JSON.parse(env.GOOGLE_WALLET_KEY);
   let stored = false;
   try {
     await upsert(keyFile, walletClass, object);
