@@ -16,3 +16,7 @@ ios/Payload/
 *.keystore
 *.key
 dist/
+
+# Python bytecode
+__pycache__/
+*.pyc
