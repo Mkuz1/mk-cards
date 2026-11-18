@@ -272,6 +272,28 @@ def attach_build():
         time.sleep(60)
 
 
+@step("Expire old TestFlight builds")
+def expire_old():
+    """Keeps only the build attached to the version being prepared (and, if none, the newest build of this version);
+    every other build is expired, so TestFlight shows the right version as the latest."""
+    attached = (call("GET", f"/v1/appStoreVersions/{VID}?include=build")["data"]["relationships"]["build"].get("data") or {}).get("id")
+    builds = call("GET", f"/v1/builds?filter[app]={APP}&limit=50&include=preReleaseVersion")
+    versions = {x["id"]: x["attributes"]["version"] for x in builds.get("included", []) if x["type"] == "preReleaseVersions"}
+    rows = [(b["id"], b["attributes"]["version"], versions.get((b["relationships"]["preReleaseVersion"].get("data") or {}).get("id"), "?"),
+             b["attributes"].get("expired")) for b in builds["data"]]
+    keep = attached or max((r for r in rows if r[2] == M["versionString"]), key=lambda r: int(r[1]), default=(None,))[0]
+    if not keep:
+        raise RuntimeError("No build of this version found; nothing was expired.")
+    done = []
+    for bid, number, ver, expired in rows:
+        if bid == keep or expired:
+            continue
+        call("PATCH", f"/v1/builds/{bid}", {"data": {"type": "builds", "id": bid, "attributes": {"expired": True}}})
+        done.append(f"{ver} ({number})")
+    kept = next(f"{r[2]} ({r[1]})" for r in rows if r[0] == keep)
+    return f"kept {kept}; expired {', '.join(done) or 'none'}"
+
+
 @step("Status")
 def status():
     builds = call("GET", f"/v1/builds?filter[app]={APP}&sort=-uploadedDate&limit=8&include=preReleaseVersion")
@@ -326,8 +348,8 @@ def submit():
 
 
 ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
-for fn in (withdraw, content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build, status, submit):
-    if fn.__name__ in ("submit", "status", "withdraw") and fn.__name__ not in ONLY:
+for fn in (withdraw, content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build, expire_old, status, submit):
+    if fn.__name__ in ("submit", "status", "withdraw", "expire_old") and fn.__name__ not in ONLY:
         continue  # only when asked for by name
     if not ONLY or fn.__name__ in ONLY:
         fn()
