@@ -120,10 +120,13 @@ def age_rating():
     return f"{len(attrs)} answers: none of the listed content"
 
 
+# The version being prepared: one that can be edited, or one waiting for review (which "withdraw" can take back).
+OPEN_STATES = ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "WAITING_FOR_REVIEW", "IN_REVIEW")
+
+
 def version():
     vs = call("GET", f"/v1/apps/{APP}/appStoreVersions?filter[platform]=IOS&limit=10")["data"]
-    editable = [v for v in vs if v["attributes"].get("appStoreState") in ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED")
-                or v["attributes"].get("appVersionState") in ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED")]
+    editable = [v for v in vs if v["attributes"].get("appStoreState") in OPEN_STATES or v["attributes"].get("appVersionState") in OPEN_STATES]
     if not editable:
         raise SystemExit("No editable App Store version found.")
     return editable[0]
@@ -131,6 +134,25 @@ def version():
 
 VER = version()
 VID = VER["id"]
+
+
+@step("Withdraw the version waiting for review")
+def withdraw():
+    """Takes a version that is waiting for (or in) review back, as "Remove from review" does, so it can be changed."""
+    subs = call("GET", f"/v1/reviewSubmissions?filter[app]={APP}&filter[platform]=IOS&limit=20")["data"]
+    waiting = [x["id"] for x in subs if x["attributes"].get("state") in ("WAITING_FOR_REVIEW", "IN_REVIEW")]
+    if not waiting:
+        return "nothing was waiting for review"
+    for sid in waiting:
+        call("PATCH", f"/v1/reviewSubmissions/{sid}", {"data": {"type": "reviewSubmissions", "id": sid, "attributes": {"canceled": True}}})
+    for _ in range(40):  # Apple takes a little while to finish cancelling
+        time.sleep(15)
+        state = call("GET", f"/v1/appStoreVersions/{VID}")["data"]["attributes"]
+        current = state.get("appStoreState") or state.get("appVersionState")
+        print("version state:", current, flush=True)
+        if current not in ("WAITING_FOR_REVIEW", "IN_REVIEW"):
+            return f"withdrawn; version is now {current}"
+    raise RuntimeError("Apple is still cancelling the review; run this again in a few minutes.")
 
 
 @step("Version number, copyright, release after approval")
@@ -297,15 +319,15 @@ def submit():
         call("POST", "/v1/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {
             "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sid}},
             "appStoreVersion": {"data": {"type": "appStoreVersions", "id": VID}}}}})
-        notes.append("added version 1.0.0")
+        notes.append(f"added version {M['versionString']}")
     call("PATCH", f"/v1/reviewSubmissions/{sid}", {"data": {"type": "reviewSubmissions", "id": sid, "attributes": {"submitted": True}}})
     final = call("GET", f"/v1/reviewSubmissions/{sid}")["data"]["attributes"].get("state")
     return f"{final}; {', '.join(notes)}"
 
 
 ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
-for fn in (content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build, status, submit):
-    if fn.__name__ in ("submit", "status") and fn.__name__ not in ONLY:
+for fn in (withdraw, content_rights, categories, info_localization, age_rating, version_attributes, texts, screenshots, review_detail, price, availability, attach_build, status, submit):
+    if fn.__name__ in ("submit", "status", "withdraw") and fn.__name__ not in ONLY:
         continue  # only when asked for by name
     if not ONLY or fn.__name__ in ONLY:
         fn()
