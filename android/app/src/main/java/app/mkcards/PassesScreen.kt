@@ -330,7 +330,7 @@ private fun PassDetail(state: AppState, activity: MainActivity, pass: Pass, clos
         Header(pass.title, back = close)
         Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             PassFace(pass, big = true)
-            if (state.me?.googleWallet == true) MKButton("Add to Google Wallet") { activity.addPassToGoogleWallet(pass.id) }
+            if (state.me?.googleWallet == true) GoogleWalletButton { activity.addPassToGoogleWallet(pass.id) }
             val details = pass.back.filter { it.value.isNotBlank() } + if (pass.notes.isNotBlank()) listOf(PassField("Notes", pass.notes)) else emptyList()
             if (details.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {

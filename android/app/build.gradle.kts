@@ -15,8 +15,8 @@ android {
         applicationId = project.property("MK_APPLICATION_ID") as String
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "2.1.0"
+        versionCode = 9
+        versionName = "2.1.1"
         buildConfigField("String", "SITE_URL", "\"$siteUrl\"")
         buildConfigField("String", "SITE_HOST", "\"$siteHost\"")
         manifestPlaceholders["siteHost"] = siteHost
@@ -69,6 +69,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")
     // QR codes are drawn on the phone, so sharing works offline.
     implementation("com.google.zxing:core:3.5.3")
+    // Google's official "Add to Google Wallet" button (required by Google Wallet's brand rules).
+    implementation("com.google.wallet.button:compose-wallet-button:0.1.0-beta01")
     // Google's document scanner, code scanner, and on-device text and QR reading (from Google Play services).
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")

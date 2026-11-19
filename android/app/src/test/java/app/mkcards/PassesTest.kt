@@ -61,7 +61,7 @@ class PassesTest {
         rule.onNodeWithText("Sara Haddad").assertExists().performClick()
         rule.waitForIdle()
         shot("2-detail")
-        rule.onNodeWithText("Add to Google Wallet").assertExists()
+        rule.onNodeWithContentDescription("Add to Google Wallet").assertExists()
         rule.activity.onBackPressedDispatcher.let { d -> rule.runOnUiThread { d.onBackPressed() } }
         rule.waitForIdle()
         rule.onNodeWithContentDescription("Add pass").performClick()

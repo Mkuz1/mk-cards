@@ -275,7 +275,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 32px
 .btn.whatsapp { background: linear-gradient(180deg, #2fd46b, #1faa55); color: #fff; border-color: transparent; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 10px 24px -10px #1faa55; }
 
 /* Wallet buttons: dark, compact pills in the style the wallets themselves use. */
-.wallet-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wallet-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 10px; }
+.wallet-row > .wallet-btn { flex: 1 1 200px; }
+/* Google's button keeps its exact proportions (48 px high) and 8 px of clear space on every side. */
+.gwallet-btn { display: block; padding: 8px; flex: none; line-height: 0; border-radius: 32px; }
+.gwallet-btn img { display: block; width: 280px; max-width: 100%; height: auto; }
+.gwallet-btn:active { transform: scale(0.98); }
 .wallet-btn {
   display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 6px 14px;
   border-radius: 14px; background: #000; color: #fff; text-decoration: none; font-weight: 650; font-size: 15px; line-height: 1.1;
@@ -285,7 +290,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 32px
 .wallet-btn svg { width: 24px; height: 24px; flex: none; }
 .wallet-btn.google { background: #1f1f1f; }
 .wallet-btn:active { transform: scale(0.98); }
-@media (max-width: 360px) { .wallet-row { grid-template-columns: 1fr; } }
 
 /* Share screen */
 .qr { background: #fff; border-radius: 26px; padding: 18px; width: min(100%, 280px); margin: 0 auto; box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.5); }

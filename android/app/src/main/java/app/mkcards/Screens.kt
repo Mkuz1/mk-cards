@@ -403,7 +403,7 @@ fun ShareScreen(state: AppState, activity: MainActivity) {
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("MK Cards", link))
                 state.message = "Link copied"
             }
-            if (state.me?.googleWallet == true) MKButton("Add to Google Wallet") { activity.addToGoogleWallet(card.id) }
+            if (state.me?.googleWallet == true) GoogleWalletButton { activity.addToGoogleWallet(card.id) }
             if (android.nfc.NfcAdapter.getDefaultAdapter(activity) != null) {
                 TapShareRow(activity, link)
                 MKButton("Write to an NFC tag", light = true) { activity.writeNfc(link) }

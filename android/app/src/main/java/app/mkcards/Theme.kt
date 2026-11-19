@@ -32,6 +32,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -168,5 +173,20 @@ fun OfflineBanner(state: AppState) {
             else "Offline: showing your saved cards and contacts.",
             color = Color(0xFF6B4B00), fontSize = 13.sp,
         )
+    }
+}
+
+/** Google's own "Add to Google Wallet" button, centred, with the clear space Google asks for. */
+@Composable
+fun GoogleWalletButton(onClick: () -> Unit) {
+    // Google's component has no spoken label, so one is added for screen readers.
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(Modifier.clearAndSetSemantics {
+            contentDescription = "Add to Google Wallet"
+            role = Role.Button
+            onClick { onClick(); true }
+        }) {
+            com.google.wallet.button.WalletButton(onClick = onClick)
+        }
     }
 }

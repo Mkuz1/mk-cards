@@ -1,7 +1,7 @@
 // MK Cards — single-page app. No build step: plain ES modules.
 import { ART_VERSION, cardTheme, drawCallBackground, drawCardArt, hexRgb, mixHex } from './card-art.js';
 
-export const APP_VERSION = '2.6.0'; // keep in step with VERSION in sw.js
+export const APP_VERSION = '2.6.1'; // keep in step with VERSION in sw.js
 
 const app = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -404,6 +404,11 @@ function walletButtons(entry) {
 }
 
 function walletButton(href, name, kind) {
+  // Google Wallet: Google's own "Add to Google Wallet" button, unchanged, as its brand rules require.
+  if (kind === 'google') {
+    return h('a', { class: 'gwallet-btn', href, rel: 'noopener' },
+      h('img', { src: '/wallet/google-wallet-button.svg', alt: 'Add to Google Wallet', width: 280, height: 48 }));
+  }
   const glyph = document.createElement('span');
   glyph.innerHTML = WALLET_ICON;
   const link = h('a', { class: `wallet-btn ${kind}`, href, rel: 'noopener' },
