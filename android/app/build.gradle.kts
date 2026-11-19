@@ -15,7 +15,7 @@ android {
         applicationId = project.property("MK_APPLICATION_ID") as String
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
+        versionCode = 10
         versionName = "2.1.1"
         buildConfigField("String", "SITE_URL", "\"$siteUrl\"")
         buildConfigField("String", "SITE_HOST", "\"$siteHost\"")
@@ -42,6 +42,12 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (System.getenv("MK_KEYSTORE") != null) signingConfig = signingConfigs.getByName("release")
         }
+    }
+
+    // The app is in English and Arabic. Keeping only these also drops the invalid language folders ("cz", "jp"…)
+    // that Google's Wallet button library ships with, which Google Play rejects.
+    androidResources {
+        localeFilters += listOf("en", "ar")
     }
 
     buildFeatures {
