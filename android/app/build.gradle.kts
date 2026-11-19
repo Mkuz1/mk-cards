@@ -15,7 +15,7 @@ android {
         applicationId = project.property("MK_APPLICATION_ID") as String
         minSdk = 24
         targetSdk = 36
-        versionCode = 10
+        versionCode = 11
         versionName = "2.1.1"
         buildConfigField("String", "SITE_URL", "\"$siteUrl\"")
         buildConfigField("String", "SITE_HOST", "\"$siteHost\"")

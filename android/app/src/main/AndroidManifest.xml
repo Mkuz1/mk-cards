@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.NFC" />
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.nfc.hce" android:required="false" />
+    <!-- Google's ML Kit scanners lock two invisible helper screens to portrait, which would make a portrait screen
+         "required" and hide the app from tablets, Chromebooks and XR devices. The app works in any orientation. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
 
     <application
         android:allowBackup="true"
