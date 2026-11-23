@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mkcards.mk",
+      "sha256_cert_fingerprints": [
+        "8C:4E:9B:37:F9:2E:9B:11:C8:8B:5C:1E:7D:6A:9D:96:AF:0F:1B:08:A0:64:78:7E:DF:FB:36:48:74:FB:3F:55"
+      ]
+    }
+  }
+]
