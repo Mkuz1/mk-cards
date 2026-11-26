@@ -649,7 +649,11 @@ function welcomeScreen() {
       h('section', { class: 'lp-final reveal' },
         h('h2', { class: 'lp-h2' }, 'Make your card in the next five minutes'),
         h('p', { class: 'lp-sub' }, 'Free to start. Nothing to install for the people you meet.'),
-        cta())),
+        cta(),
+        h('div', { class: 'lp-get', 'aria-label': 'Get the app' },
+          h('a', { class: 'btn', href: `${APP_REL}/MK-Cards-${APP_VER}-android.apk` }, icon('download'), 'Android app (APK)'),
+          h('a', { class: 'btn', href: `${APP_REL}/MK-Cards-${APP_VER}-iphone.ipa` }, icon('download'), 'iPhone app (IPA)')),
+        h('p', { class: 'small lp-get-note' }, 'The iPhone app installs with Sideloadly or AltStore and a free Apple account.'))),
     h('aside', { class: 'lp-more', 'aria-label': 'More apps by MK' },
       h('a', { href: 'https://www.koussa.net/' },
         h('span', {}, h('strong', {}, 'More free apps by MK'),
@@ -1636,6 +1640,10 @@ const TEMPLATE_NOTES = [
   'role: member or admin. company: empty uses your company name. card_email: the email shown on the card (default: the sign-in email).',
   'Rows for people already in your company update their main card; a temporary_password in such a row resets their password.',
 ];
+
+// Phone app downloads from the public GitHub release.
+const APP_VER = '2.1.1';
+const APP_REL = `https://github.com/Mkuz1/mk-cards/releases/download/v${APP_VER}`;
 
 function downloadTemplate() {
   saveCsv([TEMPLATE_HEAD, TEMPLATE_EXAMPLE], 'mkcards-import-template.csv');
