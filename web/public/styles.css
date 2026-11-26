@@ -787,6 +787,12 @@ body.landing #app { max-width: none; padding: 0; }
 .lp-final .lp-sub { margin: 0 0 16px; color: rgba(255, 255, 255, 0.72); }
 .lp-final .btn.primary { background: #fff; color: var(--accent); border-color: #fff; }
 .lp-final .btn.primary:hover { background: #e8ecf3; }
+.lp-more { width: min(var(--lp-max), calc(100% - 32px)); margin: 0 auto 48px; }
+.lp-more a { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 20px 24px; border: 1px solid var(--hairline); border-radius: 16px; color: var(--ink); text-decoration: none; transition: border-color 300ms var(--ease), background-color 300ms var(--ease); }
+.lp-more a:hover { border-color: var(--ink-2); }
+.lp-more strong { display: block; font-size: 17px; line-height: 24px; }
+.lp-more span span { display: block; margin-top: 2px; color: var(--ink-2); font-size: 14px; line-height: 20px; }
+.lp-more .go { flex: none; font-weight: 600; font-size: 14px; line-height: 20px; white-space: nowrap; color: var(--accent); }
 .lp-footer { width: min(var(--lp-max), calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; display: flex; flex-wrap: wrap; align-items: center; gap: 24px; border-top: 1px solid var(--hairline); color: var(--ink-2); }
 .lp-footer .brand { font-size: 16px; line-height: 24px; color: var(--ink); gap: 8px; }
 .lp-footer nav { display: flex; gap: 24px; flex: 1; }
