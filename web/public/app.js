@@ -557,19 +557,117 @@ function photoSheet(img, onDone) {
 
 // ---------- screens ----------
 
+// The public landing page: one offer (a free digital business card), one primary action (create it).
 function welcomeScreen() {
-  return h('div', { class: 'stack' },
-    h('header', { class: 'topbar' }, h('div', { class: 'brand grow' }, logo(), 'MK Cards'),
-      h('a', { class: 'btn', href: '/login' }, 'Log in')),
-    h('section', { class: 'glass hero' },
-      h('h1', {}, 'Your business card, always with you'),
-      h('p', {}, 'Create a free account, make your card, and share it with a link or a QR code — no app needed on the other side.'),
-      h('a', { class: 'btn primary', href: '/register' }, 'Create your account')),
-    renderCard({
-      name: 'Alex Morgan', title: 'Product Designer', company: 'Northwind Studio',
-      phones: [{ label: 'mobile', value: '+1 555 010 2030' }], emails: [{ label: 'work', value: 'alex@example.com' }], website: 'https://example.com', accent: '#2a5ba8', style: 'aurora',
-    }),
-    h('p', { class: 'muted small center' }, 'Example card'));
+  const cta = (label = 'Create your free card') => h('a', { class: 'btn primary lp-cta', href: '/register' }, label);
+  const sample = {
+    name: 'Layla Haddad', title: 'Head of Partnerships', company: 'Northwind Trading',
+    phones: [{ label: 'mobile', value: '+971 50 123 4567' }], emails: [{ label: 'work', value: 'layla@northwind.ae' }],
+    website: 'https://northwind.ae', accent: '#2a5ba8', style: 'aurora',
+  };
+  const samplePass = {
+    kind: 'event', org: 'Trade Forum', title: 'Conference badge', header: { label: 'Pass', value: 'All access' },
+    primary: { label: 'Attendee', value: 'Layla Haddad' }, front: [{ label: 'Company', value: 'Northwind' }, { label: 'Hall', value: '4' }],
+    barcode: { format: 'none' }, colors: { bg: '#0d3b66', fg: '#ffffff', label: '#f4d35e' },
+  };
+  const tagline = 'Paper cards end up in a drawer. Yours stays one tap away, and it is always up to date.';
+
+  const feature = (id, title, text, points, visual) => h('section', { class: 'lp-feature reveal', id },
+    h('div', { class: 'lp-feature-copy' },
+      h('h3', {}, title), h('p', { class: 'lp-body' }, text),
+      h('ul', { class: 'lp-points' }, ...points.map((p) => h('li', {}, icon('check'), h('span', {}, p))))),
+    h('div', { class: 'lp-feature-visual' }, visual));
+
+  const contactsMock = h('div', { class: 'lp-mock-list' },
+    ...[['Omar Saleh', 'Procurement lead, Gulf Logistics', 'Scanned card'], ['Nadia Rahman', 'Founder, Cedar Analytics', 'Event badge'], ['Karim Aoun', 'CFO, Levant Freight', 'Shared on your card']]
+      .map(([n, r, s]) => h('div', { class: 'lp-mock-row' }, h('span', { class: 'lp-mock-avatar' }, initials(n)),
+        h('span', { class: 'grow' }, h('strong', {}, n), h('small', {}, r)), h('span', { class: 'lp-mock-tag' }, s))));
+
+  const steps = [
+    ['Make your card', 'Add your name, role, phone numbers and links. Choose colours and add your photo or logo, in English and Arabic.'],
+    ['Share it your way', 'Show your QR code, send the link, tap an NFC tag, or add it to Apple Wallet or Google Wallet.'],
+    ['Keep every contact', 'People save your details in one tap. Scan the cards you receive so nobody gets lost.'],
+  ];
+  const faq = [
+    ['Is MK Cards free?', 'Yes. Creating an account and your cards is free, and the people you share with never pay or sign up.'],
+    ['Do people need the app to see my card?', 'No. Your card opens in any phone browser, and they save your contact in one tap.'],
+    ['Can I have more than one card?', 'Yes. Make a card for each audience, such as work, clients or events, each with its own link and QR code.'],
+    ['Does it work in Arabic?', 'Yes. Every card can have English and Arabic versions, and visitors switch between them.'],
+    ['Can I add my card to my phone wallet?', 'Yes. Add it to Apple Wallet on iPhone or Google Wallet on Android, so it is ready without opening anything.'],
+    ['What are passes?', 'Your own copies of IDs, travel passes, tickets and memberships, made from 23 templates and kept on your phone. They are for convenience, not official documents.'],
+    ['Can my company manage everyone’s cards?', 'Yes. Import your team from a spreadsheet, sign in with Microsoft or Google, and design one printed card for the whole company.'],
+    ['Can I delete my account?', 'Yes, at any time from your account page. Your cards and data are removed.'],
+  ];
+
+  const words = tagline.split(' ').map((w) => h('span', { class: 'lp-word' }, w + ' '));
+  const page = h('div', { class: 'lp' },
+    h('a', { class: 'skip', href: '#lp-main' }, 'Skip to content'),
+    h('header', { class: 'lp-nav' },
+      h('a', { class: 'brand', href: '/' }, logo(), h('span', {}, 'MK Cards')),
+      h('nav', { class: 'lp-nav-links', 'aria-label': 'Sections' },
+        h('a', { href: '#features' }, 'Features'), h('a', { href: '#how' }, 'How it works'), h('a', { href: '#faq' }, 'Questions')),
+      h('div', { class: 'lp-nav-actions' },
+        h('a', { class: 'lp-link', href: '/login' }, 'Log in'),
+        h('a', { class: 'btn primary small', href: '/register' }, 'Get started'))),
+    h('main', { id: 'lp-main' },
+      h('section', { class: 'lp-hero' },
+        h('div', { class: 'lp-hero-copy' },
+          h('h1', { class: 'lp-title' }, 'Your business card ', h('br'), 'always in your pocket'),
+          h('p', { class: 'lp-sub' }, 'Make a digital business card in minutes and share it with a QR code, a link, NFC or your phone’s wallet. The people you meet save your details in one tap, with no app to install.'),
+          h('div', { class: 'lp-actions' }, cta(), h('a', { class: 'lp-link', href: '/login' }, 'I already have an account')),
+          h('p', { class: 'lp-proof' }, icon('check'), 'Free to start. Works on iPhone, Android and the web.')),
+        h('div', { class: 'lp-hero-visual', 'aria-label': 'Example card', role: 'img' },
+          h('div', { class: 'lp-hero-card' }, renderCard(sample)),
+          h('div', { class: 'lp-hero-pass' }, renderPass(samplePass)))),
+      h('section', { class: 'lp-tagline', 'aria-label': tagline }, h('p', { 'aria-hidden': 'true' }, ...words)),
+      h('div', { id: 'features', class: 'lp-features' },
+        feature('share', 'Share it however the moment needs',
+          'Every card has its own link and QR code that work without internet on your side.',
+          ['Full screen QR code for meetings and stands', 'Add it to Apple Wallet or Google Wallet', 'Write it to NFC stickers, or tap phones on Android'],
+          h('div', { class: 'lp-qr' }, qrBox('https://mkcards.pages.dev/layla'), h('small', {}, 'mkcards.pages.dev/layla'))),
+        feature('scan', 'Never lose a contact again',
+          'Photograph the paper cards and event badges you receive and the details are read for you.',
+          ['Visitors can send you their details from your card', 'Export to a spreadsheet or send leads to Salesforce', 'Works offline and uploads later'],
+          contactsMock),
+        feature('passes', 'All your passes in one place',
+          'Keep your own copies of IDs, travel passes, tickets and memberships next to your card.',
+          ['23 templates, or design your own', 'Copy the barcode from your real card with the camera', 'Add them to your phone’s wallet'],
+          h('div', { class: 'lp-pass-stack' },
+            renderPass({ ...samplePass, kind: 'transit', transit: 'train', org: 'Example Rail', title: 'Train ticket', header: { label: 'Date', value: '24 Nov' }, primary: { label: 'Paris', value: 'PAR' }, to: { label: 'Lyon', value: 'LYS' }, front: [{ label: 'Coach', value: '12' }, { label: 'Seat', value: '45' }], colors: { bg: '#7a1f2b', fg: '#ffffff', label: '#f6c6cc' } }),
+            renderPass({ ...samplePass, kind: 'store', org: 'Northside Fitness', title: 'Gym membership', header: { label: 'Plan', value: 'Premium' }, primary: { label: 'Member', value: 'Layla Haddad' }, front: [{ label: 'Member no.', value: 'G-88412' }], colors: { bg: '#0b6e4f', fg: '#ffffff', label: '#ffe08a' } }))),
+        feature('teams', 'Matching cards for your whole team',
+          'Give everyone a card in your company’s style and keep it accurate when people join or leave.',
+          ['Import your team from a spreadsheet', 'Sign in with Microsoft 365 or Google Workspace', 'Design one printed card and download everyone’s'],
+          h('div', { class: 'lp-team' }, ...['Layla Haddad', 'Omar Saleh', 'Nadia Rahman'].map((n, i) => h('div', { class: 'lp-team-row', style: `--d:${i}` },
+            h('span', { class: 'lp-mock-avatar' }, initials(n)), h('strong', { class: 'grow' }, n), h('span', { class: 'lp-mock-tag' }, i === 2 ? 'Invited' : 'Active')))))),
+      h('section', { id: 'how', class: 'lp-how reveal' },
+        h('h2', { class: 'lp-h2' }, 'Ready in three steps'),
+        h('ol', { class: 'lp-steps' }, ...steps.map(([t, d], i) => h('li', {}, h('span', { class: 'lp-step-n' }, String(i + 1).padStart(2, '0')), h('h3', {}, t), h('p', { class: 'lp-body' }, d))))),
+      h('section', { id: 'faq', class: 'lp-faq reveal' },
+        h('h2', { class: 'lp-h2' }, 'Questions people ask'),
+        h('dl', { class: 'lp-faq-list' }, ...faq.map(([q, a]) => h('div', {}, h('dt', {}, q), h('dd', {}, a))))),
+      h('section', { class: 'lp-final reveal' },
+        h('h2', { class: 'lp-h2' }, 'Make your card in the next five minutes'),
+        h('p', { class: 'lp-sub' }, 'Free to start. Nothing to install for the people you meet.'),
+        cta())),
+    h('footer', { class: 'lp-footer' },
+      h('span', { class: 'brand' }, logo(), h('span', {}, 'MK Cards')),
+      h('nav', { 'aria-label': 'Legal' }, h('a', { href: '/privacy' }, 'Privacy'), h('a', { href: '/support' }, 'Support'), h('a', { href: '/delete-account' }, 'Delete account')),
+      h('small', {}, '© 2026 MK Cards')));
+
+  // Sections rise into place once; the tagline lights up word by word as it crosses the middle of the screen.
+  requestAnimationFrame(() => {
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reveal = new IntersectionObserver((entries) => entries.forEach((e) => {
+      if (e.isIntersecting) { e.target.classList.add('in'); reveal.unobserve(e.target); }
+    }), { threshold: 0.15 });
+    page.querySelectorAll('.reveal').forEach((el) => (still ? el.classList.add('in') : reveal.observe(el)));
+    const lit = new IntersectionObserver((entries) => entries.forEach((e) => {
+      if (e.isIntersecting) { e.target.classList.add('on'); lit.unobserve(e.target); }
+    }), { rootMargin: '0px 0px -45% 0px' });
+    words.forEach((w) => (still ? w.classList.add('on') : lit.observe(w)));
+  });
+  return page;
 }
 
 function authForm({ title, intro, fields, submitLabel, onSubmit, footer }) {
@@ -722,8 +820,8 @@ function cardTile(entry) {
         h('span', { class: 'muted' }, `Updated ${shortDate(entry.updatedAt)}`)),
       h('div', { class: 'tile-actions' },
         h('a', { class: 'btn small primary', href: `/edit/${entry.id}` }, icon('edit'), 'Edit'),
-        h('button', { class: 'btn small', onclick: () => copyText(cardUrl(entry)) }, icon('copy'), 'Copy'),
-        h('a', { class: 'btn small', href: `/share/${entry.id}` }, icon('qr'), 'QR'),
+        h('button', { class: 'btn small icon-only', 'aria-label': 'Copy link', title: 'Copy link', onclick: () => copyText(cardUrl(entry)) }, icon('copy')),
+        h('a', { class: 'btn small icon-only', href: `/share/${entry.id}`, 'aria-label': 'QR code', title: 'QR code' }, icon('qr')),
         h('button', { class: 'btn small icon-only', 'aria-label': 'Statistics', title: 'Statistics', onclick: () => statsSheet(entry) }, icon('chart')),
         h('button', { class: 'btn small icon-only', 'aria-label': 'More', title: 'More', onclick: () => cardMenu(entry) }, icon('more')))));
 }
@@ -3273,6 +3371,7 @@ function render() {
   }
   app.replaceChildren(screen);
   // The top navigation is for people who are logged in; card pages and visitors get a clean page.
+  document.body.classList.toggle('landing', !me.user && path === '/');
   document.body.classList.toggle('wide', tab === 'home' || tab === 'admin' || tab === 'contacts' || tab === 'passes');
   document.body.classList.toggle('in-app', inAppTabs);
   tabbar.hidden = !me.user || tab === null || inAppTabs;
